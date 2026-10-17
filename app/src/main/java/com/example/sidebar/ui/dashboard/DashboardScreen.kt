@@ -1,6 +1,7 @@
 
 package com.example.sidebar.ui.dashboard
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,31 +10,32 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     state: DashboardUiState,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onRestart: () -> Unit,
-    onDismissMessage: () -> Unit
 ) {
+    val busy = state.operation != null
+
     Scaffold { padding ->
         Column(
             modifier = Modifier
@@ -75,12 +77,13 @@ fun DashboardScreen(
                             )
 
                             Text(
-                                text = if (!state.serviceImplemented) {
-                                    "Not configured"
-                                } else if (state.serviceRunning) {
-                                    "Running"
-                                } else {
-                                    "Stopped"
+                                text = when {
+                                    !state.serviceImplemented -> "Not configured"
+                                    state.operation == ServiceOperation.START -> "Starting…"
+                                    state.operation == ServiceOperation.STOP -> "Stopping…"
+                                    state.operation == ServiceOperation.RESTART -> "Restarting…"
+                                    state.serviceRunning -> "Running"
+                                    else -> "Stopped"
                                 },
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.SemiBold
@@ -92,10 +95,7 @@ fun DashboardScreen(
                             color = MaterialTheme.colorScheme.surfaceVariant
                         ) {
                             Text(
-                                text = if (
-                                    state.serviceImplemented &&
-                                    state.serviceRunning
-                                ) "ACTIVE" else "INACTIVE",
+                                text = if (state.serviceRunning) "ACTIVE" else "INACTIVE",
                                 modifier = Modifier.padding(
                                     horizontal = 12.dp,
                                     vertical = 8.dp
@@ -107,7 +107,7 @@ fun DashboardScreen(
 
                     Text(
                         text = if (state.serviceImplemented) {
-                            "The sidebar service status is available."
+                            "Control the sidebar background service."
                         } else {
                             "The overlay service has not been connected yet."
                         },
@@ -117,9 +117,19 @@ fun DashboardScreen(
 
                     Button(
                         onClick = onStart,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !busy
                     ) {
-                        Text("Start sidebar")
+                        if (state.operation == ServiceOperation.START) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Starting…")
+                        } else {
+                            Text("Start sidebar")
+                        }
                     }
 
                     Row(
@@ -128,16 +138,36 @@ fun DashboardScreen(
                     ) {
                         OutlinedButton(
                             onClick = onStop,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            enabled = !busy
                         ) {
-                            Text("Stop")
+                            if (state.operation == ServiceOperation.STOP) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("Stopping…")
+                            } else {
+                                Text("Stop")
+                            }
                         }
 
                         OutlinedButton(
                             onClick = onRestart,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            enabled = !busy
                         ) {
-                            Text("Restart")
+                            if (state.operation == ServiceOperation.RESTART) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("Restarting…")
+                            } else {
+                                Text("Restart")
+                            }
                         }
                     }
                 }
@@ -169,28 +199,6 @@ fun DashboardScreen(
                 )
             }
 
-            if (state.message != null) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = state.message,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        OutlinedButton(onClick = onDismissMessage) {
-                            Text("Dismiss")
-                        }
-                    }
-                }
-            }
-
             Spacer(Modifier.height(12.dp))
         }
     }
@@ -207,7 +215,7 @@ private fun QuickActionCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        border = androidx.compose.foundation.BorderStroke(
+        border = BorderStroke(
             1.dp,
             MaterialTheme.colorScheme.outlineVariant
         )
@@ -227,12 +235,14 @@ private fun QuickActionCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium
                 )
+
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+
             Spacer(Modifier.width(8.dp))
         }
     }
