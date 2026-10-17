@@ -263,67 +263,8 @@ fun DashboardScreen(
                 fontWeight = FontWeight.SemiBold
             )
 
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                QuickActionCard(
-                    title = "Screenshot",
-                    description = "Capture and save your screen from the floating sidebar"
-                )
-                QuickActionCard(
-                    title = "Screen recording",
-                    description = "Not implemented yet"
-                )
-                QuickActionCard(
-                    title = "App shortcuts",
-                    description = "Not implemented yet"
-                )
-            }
-
             Spacer(Modifier.height(12.dp))
         }
     }
 }
 
-@Composable
-private fun QuickActionCard(
-    title: String,
-    description: String
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium
-                )
-
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}

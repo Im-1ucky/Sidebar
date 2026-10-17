@@ -1,0 +1,3 @@
+1. Add Screen Recording to Dashboard
+2. Add floating toggle for screen recording
+3. Open shortcut apps in split mode if possible

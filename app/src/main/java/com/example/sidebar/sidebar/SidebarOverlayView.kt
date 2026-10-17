@@ -26,7 +26,8 @@ class SidebarOverlayView(
     private val onDragFinished: (Float) -> Unit,
     private val onDragModeChanged: (Boolean) -> Unit,
     private val onSwipeInward: (Float) -> Unit,
-    private val onScreenshot: () -> Unit
+    private val onScreenshot: () -> Unit,
+    private val onRecord: (com.example.sidebar.recording.RecordingAudioMode) -> Unit
 ) : LinearLayout(context) {
 
     var isExpanded = false
@@ -307,10 +308,16 @@ class SidebarOverlayView(
 
         actions.addView(
             createIconButton(
-                android.R.drawable.presence_video_online,
-                "Screen recording"
+                iconRes = android.R.drawable.presence_video_online,
+                description = "Screen recording",
+                onLongClick = {
+                    showRecordingAudioPicker()
+                }
             ) {
-                // Recording will be implemented separately.
+                changeExpanded(false)
+                onRecord(
+                    com.example.sidebar.recording.RecordingAudioMode.NONE
+                )
             },
             LayoutParams(dp(54), dp(54))
         )
@@ -603,6 +610,35 @@ class SidebarOverlayView(
                 }
             )
         }
+    }
+
+    private fun showRecordingAudioPicker() {
+        val dialog = android.app.AlertDialog.Builder(
+            context,
+            android.R.style.Theme_DeviceDefault_Dialog_Alert
+        )
+            .setTitle("Recording audio")
+            .setItems(
+                arrayOf("Microphone", "No audio")
+            ) { _, which ->
+                val mode =
+                    if (which == 0) {
+                        com.example.sidebar.recording.RecordingAudioMode.MICROPHONE
+                    } else {
+                        com.example.sidebar.recording.RecordingAudioMode.NONE
+                    }
+
+                changeExpanded(false)
+                onRecord(mode)
+            }
+            .setNegativeButton("Cancel", null)
+            .create()
+
+        dialog.window?.setType(
+            android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        )
+
+        dialog.show()
     }
 
     private fun createIconButton(

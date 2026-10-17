@@ -13,6 +13,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import kotlin.math.roundToInt
+import com.example.sidebar.recording.RecordingController
 
 class SidebarOverlayManager(
     context: Context,
@@ -29,6 +30,8 @@ class SidebarOverlayManager(
 
     private var anchoredLeft = false
     private var callbacksRegistered = false
+
+    private val recordingController = RecordingController(appContext)
 
     private val configurationCallbacks = object : ComponentCallbacks {
         override fun onConfigurationChanged(newConfig: Configuration) {
@@ -142,7 +145,10 @@ class SidebarOverlayManager(
                 val inward = if (anchoredLeft) dx > 0 else dx < 0
                 if (inward) overlay?.changeExpanded(true)
             },
-            onScreenshot = onScreenshot
+            onScreenshot = onScreenshot,
+            onRecord = { audioMode ->
+                recordingController.start(audioMode)
+            }
         )
 
         overlay = sidebarView
