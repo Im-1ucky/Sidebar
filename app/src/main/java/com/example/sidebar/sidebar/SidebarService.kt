@@ -7,18 +7,14 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.provider.Settings
 import android.util.Log
 
 class SidebarService : Service() {
 
-    inner class LocalBinder : Binder() {
-        fun getService(): SidebarService = this@SidebarService
-    }
-
-    private val binder = LocalBinder()
+    private var overlayManager: SidebarOverlayManager? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -26,7 +22,7 @@ class SidebarService : Service() {
         Log.i(TAG, "Service created")
     }
 
-    override fun onBind(intent: Intent?): IBinder = binder
+    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(
         intent: Intent?,
@@ -36,23 +32,36 @@ class SidebarService : Service() {
         when (intent?.action) {
             ACTION_STOP -> {
                 Log.i(TAG, "Stop requested")
-
                 stopForeground(STOP_FOREGROUND_REMOVE)
-
-                // onDestroy() sends ACTION_STOPPED.
                 stopSelfResult(startId)
                 return START_NOT_STICKY
             }
 
             else -> {
-                // A foreground-service start must be promoted promptly.
                 startForeground(
                     NOTIFICATION_ID,
                     buildNotification()
                 )
 
-                Log.i(TAG, "Service started in foreground")
+                if (Settings.canDrawOverlays(this)) {
+                    try {
+                        if (overlayManager == null) {
+                            overlayManager = SidebarOverlayManager(this)
+                        }
 
+                        overlayManager?.show()
+                    } catch (exception: Exception) {
+                        Log.e(
+                            TAG,
+                            "Unable to show sidebar overlay",
+                            exception
+                        )
+                    }
+                } else {
+                    Log.w(TAG, "Overlay permission has not been granted")
+                }
+
+                Log.i(TAG, "Service started")
                 sendServiceEvent(ACTION_STARTED)
                 return START_NOT_STICKY
             }
@@ -60,14 +69,23 @@ class SidebarService : Service() {
     }
 
     override fun onDestroy() {
+        try {
+            overlayManager?.hide()
+        } catch (exception: Exception) {
+            Log.e(TAG, "Unable to remove sidebar overlay", exception)
+        } finally {
+            overlayManager = null
+        }
+
         Log.i(TAG, "Service destroyed")
         sendServiceEvent(ACTION_STOPPED)
         super.onDestroy()
     }
 
     private fun sendServiceEvent(action: String) {
-        val intent = Intent(action).setPackage(packageName)
-        sendBroadcast(intent)
+        sendBroadcast(
+            Intent(action).setPackage(packageName)
+        )
     }
 
     private fun createNotificationChannel() {
@@ -99,13 +117,10 @@ class SidebarService : Service() {
 
         const val ACTION_START =
             "com.example.sidebar.ACTION_START"
-
         const val ACTION_STARTED =
             "com.example.sidebar.ACTION_STARTED"
-
         const val ACTION_STOP =
             "com.example.sidebar.ACTION_STOP"
-
         const val ACTION_STOPPED =
             "com.example.sidebar.ACTION_STOPPED"
 

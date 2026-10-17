@@ -5,12 +5,15 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -26,9 +29,29 @@ class MainActivity : ComponentActivity() {
 
     private var pendingOperation: ServiceOperation? = null
     private var receiverRegistered = false
+    private var waitingForOverlayPermission = false
+
+    private val overlayPermissionLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) {
+            if (Settings.canDrawOverlays(this)) {
+                if (waitingForOverlayPermission) {
+                    waitingForOverlayPermission = false
+                    SidebarService.start(this)
+                }
+            } else {
+                waitingForOverlayPermission = false
+                pendingOperation = null
+                dashboardViewModel.operationCompleted(running = false)
+            }
+        }
 
     private val serviceReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
+        override fun onReceive(
+            context: Context?,
+            intent: Intent?
+        ) {
             when (intent?.action) {
                 SidebarService.ACTION_STARTED -> {
                     Log.i(TAG, "Start acknowledged")
@@ -38,7 +61,9 @@ class MainActivity : ComponentActivity() {
                         pendingOperation == ServiceOperation.RESTART
                     ) {
                         pendingOperation = null
-                        dashboardViewModel.operationCompleted(running = true)
+                        dashboardViewModel.operationCompleted(
+                            running = true
+                        )
                     }
                 }
 
@@ -48,12 +73,20 @@ class MainActivity : ComponentActivity() {
                     when (pendingOperation) {
                         ServiceOperation.STOP -> {
                             pendingOperation = null
-                            dashboardViewModel.operationCompleted(running = false)
+                            dashboardViewModel.operationCompleted(
+                                running = false
+                            )
                         }
 
                         ServiceOperation.RESTART -> {
-                            // Start again only after the stop acknowledgement.
-                            SidebarService.start(this@MainActivity)
+                            if (Settings.canDrawOverlays(this@MainActivity)) {
+                                SidebarService.start(this@MainActivity)
+                            } else {
+                                pendingOperation = null
+                                dashboardViewModel.operationCompleted(
+                                    running = false
+                                )
+                            }
                         }
 
                         else -> Unit
@@ -70,6 +103,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             SidebarTheme {
                 dashboardViewModel = viewModel()
+
                 val state by dashboardViewModel.uiState.collectAsState()
 
                 DashboardScreen(
@@ -80,7 +114,7 @@ class MainActivity : ComponentActivity() {
                             dashboardViewModel.beginOperation(
                                 ServiceOperation.START
                             )
-                            SidebarService.start(this@MainActivity)
+                            startSidebarWithPermission()
                         }
                     },
                     onStop = {
@@ -100,10 +134,26 @@ class MainActivity : ComponentActivity() {
                             )
                             SidebarService.stop(this@MainActivity)
                         }
-                    },
+                    }
                 )
             }
         }
+    }
+
+    private fun startSidebarWithPermission() {
+        if (Settings.canDrawOverlays(this)) {
+            SidebarService.start(this)
+            return
+        }
+
+        waitingForOverlayPermission = true
+
+        val intent = Intent(
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            Uri.parse("package:$packageName")
+        )
+
+        overlayPermissionLauncher.launch(intent)
     }
 
     override fun onStart() {
