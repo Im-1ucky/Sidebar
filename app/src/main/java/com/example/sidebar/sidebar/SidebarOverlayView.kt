@@ -44,9 +44,9 @@ class SidebarOverlayView(
     private val handle = View(context)
     private val handler = Handler(Looper.getMainLooper())
 
-    private val panelColor = Color.argb(185, 24, 24, 27)
-    private val actionColor = Color.argb(150, 55, 55, 60)
-    private val foregroundColor = Color.WHITE
+    private val panelColor = Color.argb(240, 255, 255, 255)
+    private val actionColor = Color.argb(210, 225, 225, 225)
+    private val foregroundColor = Color.BLACK
     private val touchSlop = dp(6)
     private val swipeThreshold = dp(40)
     private val longPressTimeout = 250L
@@ -68,11 +68,21 @@ class SidebarOverlayView(
     )
 
     private var showingAppPicker = false
+    private var showingScreenshotDelayPicker = false
 
     private val shortcutPrefs = context.getSharedPreferences(
         "sidebar_shortcuts",
         Context.MODE_PRIVATE
     )
+
+    private val settingsPrefs = context.getSharedPreferences(
+        "sidebar_preferences",
+        Context.MODE_PRIVATE
+    )
+
+    private companion object {
+        const val KEY_CAPTURE_DELAY = "screenshot_delay_seconds"
+    }
 
     private fun getLaunchableApps(): List<LaunchableApp> {
         val intent = Intent(Intent.ACTION_MAIN).apply {
@@ -263,6 +273,11 @@ class SidebarOverlayView(
         gravity = Gravity.CENTER_HORIZONTAL
         background = roundedBackground(panelColor, 24)
 
+        if (showingScreenshotDelayPicker) {
+            renderScreenshotDelayPicker()
+            return
+        }
+
         if (showingAppPicker) {
             renderAppPicker()
             return
@@ -275,8 +290,12 @@ class SidebarOverlayView(
 
         actions.addView(
             createIconButton(
-                android.R.drawable.ic_menu_camera,
-                "Screenshot"
+                iconRes = android.R.drawable.ic_menu_camera,
+                description = "Screenshot",
+                onLongClick = {
+                    showingScreenshotDelayPicker = true
+                    render()
+                }
             ) {
                 changeExpanded(false)
                 onScreenshot()
@@ -300,7 +319,7 @@ class SidebarOverlayView(
 
         val heading = TextView(context).apply {
             text = "APP SHORTCUTS"
-            setTextColor(Color.LTGRAY)
+            setTextColor(Color.DKGRAY)
             textSize = 11f
             letterSpacing = 0.1f
             gravity = Gravity.CENTER_VERTICAL
@@ -516,9 +535,80 @@ class SidebarOverlayView(
         )
     }
 
+    private fun renderScreenshotDelayPicker() {
+        val header = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val back = TextView(context).apply {
+            text = "‹"
+            textSize = 30f
+            setTextColor(foregroundColor)
+            gravity = Gravity.CENTER
+            contentDescription = "Back"
+            setOnClickListener {
+                showingScreenshotDelayPicker = false
+                render()
+            }
+        }
+
+        header.addView(back, LayoutParams(dp(36), dp(40)))
+
+        val title = TextView(context).apply {
+            text = "SCREENSHOT DELAY"
+            textSize = 12f
+            letterSpacing = 0.1f
+            setTextColor(foregroundColor)
+        }
+
+        header.addView(
+            title,
+            LayoutParams(LayoutParams.WRAP_CONTENT, dp(40))
+        )
+
+        addView(header, LayoutParams(LayoutParams.MATCH_PARENT, dp(40)))
+
+        val selectedDelay = settingsPrefs.getInt(KEY_CAPTURE_DELAY, 0)
+
+        listOf(
+            0 to "Instant",
+            3 to "3 seconds",
+            5 to "5 seconds"
+        ).forEach { (seconds, label) ->
+            val option = TextView(context).apply {
+                text = if (selectedDelay == seconds) "✓  $label" else label
+                textSize = 14f
+                setTextColor(foregroundColor)
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), 0, dp(10), 0)
+                background = roundedBackground(actionColor, 12)
+                isClickable = true
+                isFocusable = true
+
+                setOnClickListener {
+                    settingsPrefs.edit()
+                        .putInt(KEY_CAPTURE_DELAY, seconds)
+                        .apply()
+
+                    showingScreenshotDelayPicker = false
+                    render()
+                }
+            }
+
+            addView(
+                option,
+                LayoutParams(LayoutParams.MATCH_PARENT, dp(48)).apply {
+                    topMargin = dp(6)
+                }
+            )
+        }
+    }
+
     private fun createIconButton(
         iconRes: Int,
         description: String,
+        onLongClick: (() -> Unit)? = null,
         onClick: () -> Unit
     ): View {
         return ImageView(context).apply {
@@ -529,7 +619,16 @@ class SidebarOverlayView(
             background = roundedBackground(actionColor, 100)
             isClickable = true
             isFocusable = true
+
             setOnClickListener { onClick() }
+            setOnLongClickListener {
+                if (onLongClick != null) {
+                    onLongClick()
+                    true
+                } else {
+                    false
+                }
+            }
         }
     }
     private fun roundedBackground(
