@@ -85,7 +85,7 @@ class SidebarOverlayManager(
             context = appContext,
             onExpandChanged = { expanded ->
                 params.width = dp(if (expanded) 260 else 12)
-                params.height = dp(if (expanded) 320 else 100)
+                params.height = dp(if (expanded) 440 else 100)
 
                 params.x = if (anchoredLeft) {
                     0
@@ -207,7 +207,7 @@ class SidebarOverlayManager(
             (screenWidth() - params.width).coerceAtLeast(0)
         )
 
-        val fallbackHeight = dp(if (expanded) 320 else 100)
+        val fallbackHeight = dp(if (expanded) 440 else 100)
         val viewHeight = overlay?.height?.takeIf { it > 0 }
             ?: fallbackHeight
 

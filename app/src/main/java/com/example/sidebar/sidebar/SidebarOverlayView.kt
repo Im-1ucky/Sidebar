@@ -13,6 +13,11 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import android.view.ViewGroup
+import android.widget.ImageView
+import android.widget.ScrollView
+import android.content.Intent
+import android.graphics.drawable.Drawable
 
 class SidebarOverlayView(
     context: Context,
@@ -54,6 +59,57 @@ class SidebarOverlayView(
                 handle.layoutParams.apply { width = dp(20) }
             onDragModeChanged(true)
         }
+    }
+
+    private data class LaunchableApp(
+        val packageName: String,
+        val name: String,
+        val icon: Drawable
+    )
+
+    private var showingAppPicker = false
+
+    private val shortcutPrefs = context.getSharedPreferences(
+        "sidebar_shortcuts",
+        Context.MODE_PRIVATE
+    )
+
+    private fun getLaunchableApps(): List<LaunchableApp> {
+        val intent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+
+        return context.packageManager
+            .queryIntentActivities(intent, 0)
+            .mapNotNull { resolveInfo ->
+                val appInfo = resolveInfo.activityInfo?.applicationInfo
+                    ?: return@mapNotNull null
+
+                val packageName = appInfo.packageName
+
+                if (packageName == context.packageName) {
+                    return@mapNotNull null
+                }
+
+                LaunchableApp(
+                    packageName = packageName,
+                    name = resolveInfo.loadLabel(context.packageManager).toString(),
+                    icon = resolveInfo.loadIcon(context.packageManager)
+                )
+            }
+            .distinctBy { it.packageName }
+            .sortedBy { it.name.lowercase() }
+    }
+
+    private fun getSelectedPackages(): Set<String> =
+        shortcutPrefs.getStringSet("selected_packages", emptySet())
+            ?.toSet()
+            ?: emptySet()
+
+    private fun saveSelectedPackages(packages: Set<String>) {
+        shortcutPrefs.edit()
+            .putStringSet("selected_packages", packages.toSet())
+            .apply()
     }
 
     init {
@@ -187,9 +243,10 @@ class SidebarOverlayView(
 
     private fun render() {
         removeAllViews()
-        setPadding(0, 0, 0, 0)
+        setPadding(dp(14), dp(14), dp(14), dp(14))
 
         if (!isExpanded) {
+            setPadding(0, 0, 0, 0)
             orientation = VERTICAL
             gravity = Gravity.CENTER
             background = null
@@ -197,82 +254,284 @@ class SidebarOverlayView(
 
             addView(
                 handle,
-                LayoutParams(
-                    dp(if (dragMode) 20 else 12),
-                    dp(100)
-                )
+                LayoutParams(dp(if (dragMode) 20 else 12), dp(100))
             )
             return
         }
 
         orientation = VERTICAL
         gravity = Gravity.CENTER_HORIZONTAL
-        setPadding(dp(16), dp(18), dp(16), dp(18))
-        background = roundedBackground(panelColor, 20)
+        background = roundedBackground(panelColor, 24)
 
-        val header = TextView(context).apply {
-            text = "SIDEBAR"
-            setTextColor(foregroundColor)
-            textSize = 13f
-            letterSpacing = 0.12f
+        if (showingAppPicker) {
+            renderAppPicker()
+            return
+        }
+
+        val actions = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+
+        actions.addView(
+            createIconButton(
+                android.R.drawable.ic_menu_camera,
+                "Screenshot"
+            ) {
+                changeExpanded(false)
+                onScreenshot()
+            },
+            LayoutParams(dp(54), dp(54)).apply {
+                marginEnd = dp(12)
+            }
+        )
+
+        actions.addView(
+            createIconButton(
+                android.R.drawable.presence_video_online,
+                "Screen recording"
+            ) {
+                // Recording will be implemented separately.
+            },
+            LayoutParams(dp(54), dp(54))
+        )
+
+        addView(actions, LayoutParams(LayoutParams.MATCH_PARENT, dp(58)))
+
+        val heading = TextView(context).apply {
+            text = "APP SHORTCUTS"
+            setTextColor(Color.LTGRAY)
+            textSize = 11f
+            letterSpacing = 0.1f
             gravity = Gravity.CENTER_VERTICAL
         }
 
         addView(
-            header,
+            heading,
             LayoutParams(LayoutParams.MATCH_PARENT, dp(36))
         )
 
-        addAction("Screenshot") {
-            changeExpanded(false)
-            onScreenshot()
+        val shortcutList = LinearLayout(context).apply {
+            orientation = VERTICAL
         }
 
-        addAction("Screen recording")
-        addAction("App shortcuts")
-
-        val close = TextView(context).apply {
-            text = "Close"
-            setTextColor(Color.LTGRAY)
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setOnClickListener { changeExpanded(false) }
+        val scrollView = ScrollView(context).apply {
+            isFillViewport = false
+            clipToPadding = false
+            addView(
+                shortcutList,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
         }
 
-        addView(
-            close,
-            LayoutParams(LayoutParams.MATCH_PARENT, dp(44))
-        )
-    }
+        val launchableApps = getLaunchableApps()
+        val appsByPackage = launchableApps.associateBy { it.packageName }
 
-    private fun addAction(
-        label: String,
-        onClick: (() -> Unit)? = null
-    ) {
-        val action = TextView(context).apply {
-            text = label
-            setTextColor(foregroundColor)
-            textSize = 15f
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), 0, dp(12), 0)
-            background = roundedBackground(actionColor, 12)
+        getSelectedPackages().forEach { packageName ->
+            val app = appsByPackage[packageName]
 
-            if (onClick != null) {
-                setOnClickListener { onClick() }
+            if (app != null) {
+                addAppRow(shortcutList, app, selected = true)
             }
         }
 
         addView(
-            action,
-            LayoutParams(
-                LayoutParams.MATCH_PARENT,
-                dp(48)
-            ).apply {
+            scrollView,
+            LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
+        )
+
+        val addApp = TextView(context).apply {
+            text = "+  Add app"
+            setTextColor(foregroundColor)
+            textSize = 14f
+            gravity = Gravity.CENTER
+            background = roundedBackground(actionColor, 14)
+
+            setOnClickListener {
+                showingAppPicker = true
+                render()
+            }
+        }
+
+        addView(
+            addApp,
+            LayoutParams(LayoutParams.MATCH_PARENT, dp(46)).apply {
                 topMargin = dp(8)
             }
         )
     }
 
+    private fun renderAppPicker() {
+        val header = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val back = TextView(context).apply {
+            text = "‹"
+            textSize = 30f
+            setTextColor(foregroundColor)
+            gravity = Gravity.CENTER
+            setOnClickListener {
+                showingAppPicker = false
+                render()
+            }
+        }
+
+        header.addView(back, LayoutParams(dp(36), dp(40)))
+
+        val title = TextView(context).apply {
+            text = "ADD APPS"
+            textSize = 12f
+            letterSpacing = 0.1f
+            setTextColor(foregroundColor)
+        }
+
+        header.addView(
+            title,
+            LayoutParams(LayoutParams.WRAP_CONTENT, dp(40))
+        )
+
+        addView(header, LayoutParams(LayoutParams.MATCH_PARENT, dp(40)))
+
+        val list = LinearLayout(context).apply {
+            orientation = VERTICAL
+        }
+
+        getLaunchableApps().forEach { app ->
+            addAppRow(
+                list,
+                app,
+                selected = app.packageName in getSelectedPackages()
+            ) {
+                val selected = getSelectedPackages().toMutableSet()
+
+                if (!selected.add(app.packageName)) {
+                    selected.remove(app.packageName)
+                }
+
+                saveSelectedPackages(selected)
+                render()
+            }
+        }
+
+        val scroll = ScrollView(context).apply {
+            addView(
+                list,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
+
+        addView(
+            scroll,
+            LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
+        )
+    }
+
+    private fun addAppRow(
+        container: LinearLayout,
+        app: LaunchableApp,
+        selected: Boolean,
+        onSelect: (() -> Unit)? = null
+    ) {
+        val row = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), 0, dp(8), 0)
+            background = roundedBackground(actionColor, 12)
+            isClickable = true
+            isFocusable = true
+
+            val icon = ImageView(context).apply {
+                setImageDrawable(app.icon)
+            }
+
+            addView(icon, LayoutParams(dp(30), dp(30)))
+
+            val name = TextView(context).apply {
+                text = app.name
+                textSize = 13f
+                setTextColor(foregroundColor)
+                setPadding(dp(10), 0, 0, 0)
+                maxLines = 1
+            }
+
+            addView(
+                name,
+                LayoutParams(0, LayoutParams.MATCH_PARENT, 1f)
+            )
+
+            if (onSelect != null) {
+                val marker = TextView(context).apply {
+                    text = if (selected) "✓" else "+"
+                    textSize = 18f
+                    setTextColor(foregroundColor)
+                    gravity = Gravity.CENTER
+                }
+
+                addView(marker, LayoutParams(dp(24), dp(40)))
+            }
+        }
+
+        row.setOnClickListener {
+            if (onSelect != null) {
+                onSelect()
+            } else {
+                try {
+                    context.packageManager
+                        .getLaunchIntentForPackage(app.packageName)
+                        ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        ?.let(context::startActivity)
+                } catch (exception: Exception) {
+                    android.util.Log.e(
+                        "SidebarOverlayView",
+                        "Unable to launch ${app.packageName}",
+                        exception
+                    )
+                }
+            }
+        }
+
+        if (onSelect == null) {
+            row.setOnLongClickListener {
+                val selected = getSelectedPackages().toMutableSet()
+                selected.remove(app.packageName)
+                saveSelectedPackages(selected)
+                render()
+                true
+            }
+        }
+
+        container.addView(
+            row,
+            LayoutParams(LayoutParams.MATCH_PARENT, dp(48)).apply {
+                bottomMargin = dp(7)
+            }
+        )
+    }
+
+    private fun createIconButton(
+        iconRes: Int,
+        description: String,
+        onClick: () -> Unit
+    ): View {
+        return ImageView(context).apply {
+            contentDescription = description
+            setImageResource(iconRes)
+            setColorFilter(foregroundColor)
+            scaleType = ImageView.ScaleType.CENTER
+            background = roundedBackground(actionColor, 100)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+        }
+    }
     private fun roundedBackground(
         color: Int,
         radiusDp: Int
