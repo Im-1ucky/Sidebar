@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -30,9 +32,14 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun DashboardScreen(
     state: DashboardUiState,
+    screenshotFolderLabel: String,
+    captureDelaySeconds: Int,
+    onCaptureDelayChanged: (Int) -> Unit,
+    onChooseScreenshotFolder: () -> Unit,
+    onResetScreenshotFolder: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
-    onRestart: () -> Unit,
+    onRestart: () -> Unit
 ) {
     val busy = state.operation != null
 
@@ -41,7 +48,8 @@ fun DashboardScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 20.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             Spacer(Modifier.height(2.dp))
@@ -67,9 +75,7 @@ fun DashboardScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(5.dp)
-                        ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                             Text(
                                 text = "SIDEBAR SERVICE",
                                 style = MaterialTheme.typography.labelMedium,
@@ -106,11 +112,7 @@ fun DashboardScreen(
                     }
 
                     Text(
-                        text = if (state.serviceImplemented) {
-                            "Control the sidebar background service."
-                        } else {
-                            "The overlay service has not been connected yet."
-                        },
+                        text = "Control the sidebar background service.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -174,6 +176,88 @@ fun DashboardScreen(
             }
 
             Text(
+                text = "Screenshot settings",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Capture delay",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    Text(
+                        text = "The countdown begins after Android's consent prompt.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(0, 3, 5).forEach { seconds ->
+                            val label =
+                                if (seconds == 0) "Instant" else "${seconds}s"
+
+                            if (captureDelaySeconds == seconds) {
+                                Button(
+                                    onClick = { onCaptureDelayChanged(seconds) }
+                                ) {
+                                    Text(label)
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = { onCaptureDelayChanged(seconds) }
+                                ) {
+                                    Text(label)
+                                }
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = "Save screenshots to",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    Text(
+                        text = screenshotFolderLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Button(
+                        onClick = onChooseScreenshotFolder,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Choose folder")
+                    }
+
+                    if (screenshotFolderLabel != "Pictures/Sidebar (default)") {
+                        OutlinedButton(
+                            onClick = onResetScreenshotFolder,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Use default folder")
+                        }
+                    }
+                }
+            }
+
+            Text(
                 text = "Quick actions",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold
@@ -185,17 +269,15 @@ fun DashboardScreen(
             ) {
                 QuickActionCard(
                     title = "Screenshot",
-                    description = "Capture and save your screen"
+                    description = "Capture and save your screen from the floating sidebar"
                 )
-
                 QuickActionCard(
                     title = "Screen recording",
-                    description = "Record your screen with audio options"
+                    description = "Not implemented yet"
                 )
-
                 QuickActionCard(
                     title = "App shortcuts",
-                    description = "Keep your favorite apps within reach"
+                    description = "Not implemented yet"
                 )
             }
 
@@ -242,8 +324,6 @@ private fun QuickActionCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-
-            Spacer(Modifier.width(8.dp))
         }
     }
 }

@@ -24,19 +24,20 @@ class DashboardViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState = _uiState.asStateFlow()
 
+    fun syncServiceState(running: Boolean) {
+        _uiState.update {
+            it.copy(serviceRunning = running)
+        }
+    }
+
     fun beginOperation(operation: ServiceOperation) {
         _uiState.update {
             it.copy(
                 operation = operation,
                 message = when (operation) {
-                    ServiceOperation.START ->
-                        "Starting sidebar service…"
-
-                    ServiceOperation.STOP ->
-                        "Stopping sidebar service…"
-
-                    ServiceOperation.RESTART ->
-                        "Restarting sidebar service…"
+                    ServiceOperation.START -> "Starting sidebar service…"
+                    ServiceOperation.STOP -> "Stopping sidebar service…"
+                    ServiceOperation.RESTART -> "Restarting sidebar service…"
                 }
             )
         }

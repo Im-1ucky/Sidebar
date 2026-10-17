@@ -20,7 +20,8 @@ class SidebarOverlayView(
     private val onDragBy: (Float, Float) -> Unit,
     private val onDragFinished: (Float) -> Unit,
     private val onDragModeChanged: (Boolean) -> Unit,
-    private val onSwipeInward: (Float) -> Unit
+    private val onSwipeInward: (Float) -> Unit,
+    private val onScreenshot: () -> Unit
 ) : LinearLayout(context) {
 
     var isExpanded = false
@@ -41,7 +42,6 @@ class SidebarOverlayView(
     private val panelColor = Color.argb(185, 24, 24, 27)
     private val actionColor = Color.argb(150, 55, 55, 60)
     private val foregroundColor = Color.WHITE
-
     private val touchSlop = dp(6)
     private val swipeThreshold = dp(40)
     private val longPressTimeout = 250L
@@ -50,11 +50,8 @@ class SidebarOverlayView(
         if (!isExpanded) {
             longPressTriggered = true
             dragMode = true
-
-            handle.layoutParams = handle.layoutParams.apply {
-                width = dp(20)
-            }
-
+            handle.layoutParams =
+                handle.layoutParams.apply { width = dp(20) }
             onDragModeChanged(true)
         }
     }
@@ -62,7 +59,6 @@ class SidebarOverlayView(
     init {
         clipChildren = false
         clipToPadding = false
-
         handle.background = roundedBackground(panelColor, 12)
 
         handle.setOnTouchListener { _, event ->
@@ -78,10 +74,7 @@ class SidebarOverlayView(
                     longPressTriggered = false
 
                     handler.removeCallbacks(longPressRunnable)
-                    handler.postDelayed(
-                        longPressRunnable,
-                        longPressTimeout
-                    )
+                    handler.postDelayed(longPressRunnable, longPressTimeout)
                     true
                 }
 
@@ -89,18 +82,14 @@ class SidebarOverlayView(
                     val dx = event.rawX - downX
                     val dy = event.rawY - downY
 
-                    if (
-                        !longPressTriggered &&
+                    if (!longPressTriggered &&
                         (abs(dx) > touchSlop || abs(dy) > touchSlop)
                     ) {
                         handler.removeCallbacks(longPressRunnable)
                     }
 
                     if (dragMode) {
-                        if (
-                            abs(dx) > touchSlop ||
-                            abs(dy) > touchSlop
-                        ) {
+                        if (abs(dx) > touchSlop || abs(dy) > touchSlop) {
                             dragging = true
                         }
 
@@ -134,20 +123,16 @@ class SidebarOverlayView(
                             dragging = false
 
                             handle.layoutParams =
-                                handle.layoutParams.apply {
-                                    width = dp(12)
-                                }
+                                handle.layoutParams.apply { width = dp(12) }
 
                             onDragModeChanged(false)
                         }
 
-                        abs(dx) > swipeThreshold &&
-                                abs(dx) > abs(dy) -> {
+                        abs(dx) > swipeThreshold && abs(dx) > abs(dy) -> {
                             onSwipeInward(dx)
                         }
 
-                        abs(dx) < touchSlop &&
-                                abs(dy) < touchSlop -> {
+                        abs(dx) < touchSlop && abs(dy) < touchSlop -> {
                             changeExpanded(true)
                         }
                     }
@@ -169,10 +154,7 @@ class SidebarOverlayView(
 
                     if (!isExpanded) {
                         handle.layoutParams =
-                            handle.layoutParams.apply {
-                                width = dp(12)
-                            }
-
+                            handle.layoutParams.apply { width = dp(12) }
                         onDragModeChanged(false)
                     }
 
@@ -211,7 +193,6 @@ class SidebarOverlayView(
             orientation = VERTICAL
             gravity = Gravity.CENTER
             background = null
-
             handle.background = roundedBackground(panelColor, 12)
 
             addView(
@@ -242,7 +223,11 @@ class SidebarOverlayView(
             LayoutParams(LayoutParams.MATCH_PARENT, dp(36))
         )
 
-        addAction("Screenshot")
+        addAction("Screenshot") {
+            changeExpanded(false)
+            onScreenshot()
+        }
+
         addAction("Screen recording")
         addAction("App shortcuts")
 
@@ -251,9 +236,7 @@ class SidebarOverlayView(
             setTextColor(Color.LTGRAY)
             textSize = 14f
             gravity = Gravity.CENTER
-            setOnClickListener {
-                changeExpanded(false)
-            }
+            setOnClickListener { changeExpanded(false) }
         }
 
         addView(
@@ -262,7 +245,10 @@ class SidebarOverlayView(
         )
     }
 
-    private fun addAction(label: String) {
+    private fun addAction(
+        label: String,
+        onClick: (() -> Unit)? = null
+    ) {
         val action = TextView(context).apply {
             text = label
             setTextColor(foregroundColor)
@@ -270,6 +256,10 @@ class SidebarOverlayView(
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), 0, dp(12), 0)
             background = roundedBackground(actionColor, 12)
+
+            if (onClick != null) {
+                setOnClickListener { onClick() }
+            }
         }
 
         addView(
@@ -287,11 +277,9 @@ class SidebarOverlayView(
         color: Int,
         radiusDp: Int
     ): GradientDrawable {
-        val radius = dp(radiusDp).toFloat()
-
         return GradientDrawable().apply {
             setColor(color)
-            cornerRadius = radius
+            cornerRadius = dp(radiusDp).toFloat()
         }
     }
 

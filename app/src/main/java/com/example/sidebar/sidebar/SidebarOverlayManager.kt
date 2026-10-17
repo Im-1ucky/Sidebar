@@ -14,17 +14,16 @@ import android.view.View
 import android.view.WindowManager
 import kotlin.math.roundToInt
 
-class SidebarOverlayManager(context: Context) {
-
+class SidebarOverlayManager(
+    context: Context,
+    private val onScreenshot: () -> Unit
+) {
     private val appContext = context.applicationContext
-
     private val windowManager =
-        appContext.getSystemService(Context.WINDOW_SERVICE)
-                as WindowManager
+        appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
     private var overlay: SidebarOverlayView? = null
     private var layoutParams: WindowManager.LayoutParams? = null
-
     private var outsideTouchView: View? = null
     private var outsideTouchParams: WindowManager.LayoutParams? = null
 
@@ -84,7 +83,6 @@ class SidebarOverlayManager(context: Context) {
 
         val sidebarView = SidebarOverlayView(
             context = appContext,
-
             onExpandChanged = { expanded ->
                 params.width = dp(if (expanded) 260 else 12)
                 params.height = dp(if (expanded) 320 else 100)
@@ -101,7 +99,6 @@ class SidebarOverlayManager(context: Context) {
                 clampPosition(params, expanded)
                 updateOverlayLayout()
             },
-
             onDragBy = { deltaX, deltaY ->
                 params.x = (params.x + deltaX.roundToInt()).coerceIn(
                     0,
@@ -115,11 +112,10 @@ class SidebarOverlayManager(context: Context) {
 
                 updateOverlayLayout()
             },
-
             onDragFinished = { rawX ->
                 anchoredLeft = rawX < screenWidth() / 2f
-
                 params.width = dp(12)
+
                 params.x = if (anchoredLeft) {
                     0
                 } else {
@@ -129,7 +125,6 @@ class SidebarOverlayManager(context: Context) {
                 clampPosition(params, false)
                 updateOverlayLayout()
             },
-
             onDragModeChanged = { active ->
                 if (overlay?.isExpanded != true) {
                     params.width = dp(if (active) 20 else 12)
@@ -143,18 +138,11 @@ class SidebarOverlayManager(context: Context) {
                     updateOverlayLayout()
                 }
             },
-
             onSwipeInward = { dx ->
-                val inward = if (anchoredLeft) {
-                    dx > 0
-                } else {
-                    dx < 0
-                }
-
-                if (inward) {
-                    overlay?.changeExpanded(true)
-                }
-            }
+                val inward = if (anchoredLeft) dx > 0 else dx < 0
+                if (inward) overlay?.changeExpanded(true)
+            },
+            onScreenshot = onScreenshot
         )
 
         overlay = sidebarView
@@ -173,7 +161,6 @@ class SidebarOverlayManager(context: Context) {
                 if (sidebarView.isAttachedToWindow) {
                     windowManager.removeView(sidebarView)
                 }
-
                 if (outsideView.isAttachedToWindow) {
                     windowManager.removeView(outsideView)
                 }
@@ -198,17 +185,8 @@ class SidebarOverlayManager(context: Context) {
             windowManager.updateViewLayout(outsideView, outsideParams)
         }
 
-        params.width = if (sidebarView.isExpanded) {
-            dp(260)
-        } else {
-            dp(12)
-        }
-
-        params.height = if (sidebarView.isExpanded) {
-            dp(320)
-        } else {
-            dp(100)
-        }
+        params.width = dp(if (sidebarView.isExpanded) 260 else 12)
+        params.height = dp(if (sidebarView.isExpanded) 320 else 100)
 
         params.x = if (anchoredLeft) {
             0
@@ -229,10 +207,8 @@ class SidebarOverlayManager(context: Context) {
             (screenWidth() - params.width).coerceAtLeast(0)
         )
 
-        val fallbackHeight = if (expanded) dp(320) else dp(100)
-
-        val viewHeight = overlay?.height
-            ?.takeIf { it > 0 }
+        val fallbackHeight = dp(if (expanded) 320 else 100)
+        val viewHeight = overlay?.height?.takeIf { it > 0 }
             ?: fallbackHeight
 
         params.y = params.y.coerceIn(
@@ -253,22 +229,16 @@ class SidebarOverlayManager(context: Context) {
     fun hide() {
         try {
             if (callbacksRegistered) {
-                appContext.unregisterComponentCallbacks(
-                    configurationCallbacks
-                )
+                appContext.unregisterComponentCallbacks(configurationCallbacks)
                 callbacksRegistered = false
             }
 
-            outsideTouchView?.let { view ->
-                if (view.isAttachedToWindow) {
-                    windowManager.removeView(view)
-                }
+            outsideTouchView?.let {
+                if (it.isAttachedToWindow) windowManager.removeView(it)
             }
 
-            overlay?.let { view ->
-                if (view.isAttachedToWindow) {
-                    windowManager.removeView(view)
-                }
+            overlay?.let {
+                if (it.isAttachedToWindow) windowManager.removeView(it)
             }
         } finally {
             overlay = null
