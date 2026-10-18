@@ -13,3 +13,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Debug files
+sidebar-bugreport.zip
+sidebar-crash.txt
