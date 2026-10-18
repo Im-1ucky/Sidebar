@@ -42,7 +42,7 @@ I wanted a sidebar that could bring those essentials back without needing root a
 ### 1. Clone the repository
 
 ```bash
-git clone <YOUR_REPOSITORY_URL>
+git clone https://github.com/Im-1ucky/Sidebar.git
 cd Sidebar
 ```
 
