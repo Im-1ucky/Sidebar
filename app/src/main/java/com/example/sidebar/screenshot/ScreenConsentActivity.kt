@@ -1,7 +1,6 @@
 
 package com.example.sidebar.screenshot
 
-import android.app.Activity
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -21,7 +20,7 @@ class ScreenshotConsentActivity : ComponentActivity() {
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
             try {
-                if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+                if (result.resultCode == RESULT_OK && result.data != null) {
                     val captureIntent = Intent(
                         this,
                         ScreenshotCaptureService::class.java
@@ -44,11 +43,7 @@ class ScreenshotConsentActivity : ComponentActivity() {
                         )
                     }
 
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        startForegroundService(captureIntent)
-                    } else {
-                        startService(captureIntent)
-                    }
+                    startForegroundService(captureIntent)
                 } else {
                     sendSessionFailedBroadcast()
                 }

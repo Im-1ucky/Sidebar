@@ -57,9 +57,4 @@ class DashboardViewModel : ViewModel() {
         }
     }
 
-    fun dismissMessage() {
-        _uiState.update {
-            it.copy(message = null)
-        }
-    }
 }

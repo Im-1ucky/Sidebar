@@ -7,10 +7,10 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.util.Log
+import androidx.core.content.edit
 
 class SidebarService : Service() {
 
@@ -31,10 +31,9 @@ class SidebarService : Service() {
     ): Int {
         if (intent?.action == ACTION_STOP) {
             Log.i(TAG, "Stop requested")
-            getSharedPreferences(STATE_PREFS, MODE_PRIVATE)
-                .edit()
-                .putBoolean(KEY_RUNNING, false)
-                .apply()
+            getSharedPreferences(STATE_PREFS, MODE_PRIVATE).edit {
+                putBoolean(KEY_RUNNING, false)
+            }
 
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelfResult(startId)
@@ -43,10 +42,9 @@ class SidebarService : Service() {
 
         startForeground(NOTIFICATION_ID, buildNotification())
 
-        getSharedPreferences(STATE_PREFS, MODE_PRIVATE)
-            .edit()
-            .putBoolean(KEY_RUNNING, true)
-            .apply()
+        getSharedPreferences(STATE_PREFS, MODE_PRIVATE).edit {
+            putBoolean(KEY_RUNNING, false)
+        }
 
         if (Settings.canDrawOverlays(this)) {
             try {
@@ -86,10 +84,9 @@ class SidebarService : Service() {
             overlayManager = null
         }
 
-        getSharedPreferences(STATE_PREFS, MODE_PRIVATE)
-            .edit()
-            .putBoolean(KEY_RUNNING, false)
-            .apply()
+        getSharedPreferences(STATE_PREFS, MODE_PRIVATE).edit {
+            putBoolean(KEY_RUNNING, false)
+        }
 
         Log.i(TAG, "Service destroyed")
         sendServiceEvent(ACTION_STOPPED)
@@ -101,15 +98,13 @@ class SidebarService : Service() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Sidebar service",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            getSystemService(NotificationManager::class.java)
-                .createNotificationChannel(channel)
-        }
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "Sidebar service",
+            NotificationManager.IMPORTANCE_LOW
+        )
+        getSystemService(NotificationManager::class.java)
+            .createNotificationChannel(channel)
     }
 
     private fun buildNotification(): Notification =
@@ -149,7 +144,7 @@ class SidebarService : Service() {
         fun isRunning(context: Context): Boolean {
             return context.getSharedPreferences(
                 STATE_PREFS,
-                Context.MODE_PRIVATE
+                MODE_PRIVATE
             ).getBoolean(KEY_RUNNING, false)
         }
     }

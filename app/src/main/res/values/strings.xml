@@ -1,3 +1,10 @@
 <resources>
     <string name="app_name">Sidebar</string>
+    <string name="sidebar_app_shortcuts">APP SHORTCUTS</string>
+    <string name="sidebar_add_app">+  Add app</string>
+    <string name="sidebar_add_apps">ADD APPS</string>
+    <string name="sidebar_screenshot_delay">SCREENSHOT DELAY</string>
+    <string name="sidebar_recording_audio">RECORDING AUDIO</string>
+    <string name="sidebar_loading_apps">Loading apps…</string>
+    <string name="recording_timer_initial">00:00</string>
 </resources>

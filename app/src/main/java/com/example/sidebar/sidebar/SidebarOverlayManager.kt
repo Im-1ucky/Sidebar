@@ -9,9 +9,7 @@ import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -28,6 +26,9 @@ import com.example.sidebar.recording.RecordingController
 import com.example.sidebar.recording.ScreenRecordingService
 import com.example.sidebar.screenshot.ScreenshotCaptureService
 import kotlin.math.roundToInt
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toDrawable
+import com.example.sidebar.R
 
 class SidebarOverlayManager(
     context: Context,
@@ -62,6 +63,7 @@ class SidebarOverlayManager(
     private val recordingHandler = Handler(Looper.getMainLooper())
 
     private val recordingTimerRunnable = object : Runnable {
+        @Suppress("DEPRECATION")
         override fun run() {
             if (recordingPill == null) return
 
@@ -140,6 +142,7 @@ class SidebarOverlayManager(
             repositionForCurrentScreen()
         }
 
+        @Deprecated("Deprecated in the implemented interface")
         override fun onLowMemory() = Unit
     }
 
@@ -151,16 +154,12 @@ class SidebarOverlayManager(
             addAction(ScreenshotCaptureService.ACTION_SESSION_FAILED)
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            appContext.registerReceiver(
-                screenshotSessionReceiver,
-                filter,
-                Context.RECEIVER_NOT_EXPORTED
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            appContext.registerReceiver(screenshotSessionReceiver, filter)
-        }
+        ContextCompat.registerReceiver(
+            appContext,
+            screenshotSessionReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         screenshotReceiverRegistered = true
     }
@@ -188,16 +187,12 @@ class SidebarOverlayManager(
             addAction(ScreenRecordingService.ACTION_RECORDING_FAILED)
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            appContext.registerReceiver(
-                recordingReceiver,
-                filter,
-                Context.RECEIVER_NOT_EXPORTED
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            appContext.registerReceiver(recordingReceiver, filter)
-        }
+        ContextCompat.registerReceiver(
+            appContext,
+            recordingReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         recordingReceiverRegistered = true
     }
@@ -225,9 +220,10 @@ class SidebarOverlayManager(
         registerRecordingReceiver()
 
         val outsideView = View(appContext).apply {
-            background = ColorDrawable(Color.TRANSPARENT)
+            background = Color.TRANSPARENT.toDrawable()
             visibility = View.GONE
 
+            @Suppress("ClickableViewAccessibility")
             setOnTouchListener { _, event ->
                 if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                     this@SidebarOverlayManager.overlay?.collapse()
@@ -244,7 +240,7 @@ class SidebarOverlayManager(
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.LEFT
+            gravity = Gravity.TOP or Gravity.START
         }
 
         val params = WindowManager.LayoutParams(
@@ -255,7 +251,7 @@ class SidebarOverlayManager(
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.LEFT
+            gravity = Gravity.TOP or Gravity.START
             x = screenWidth() - dp(12)
             y = (screenHeight() - dp(100)) / 2
         }
@@ -420,11 +416,18 @@ class SidebarOverlayManager(
         }
     }
 
+    private class DragHandleView(context: Context) : LinearLayout(context) {
+        override fun performClick(): Boolean {
+            super.performClick()
+            return true
+        }
+    }
+
     private fun createDragHandle(
         pill: View,
         params: WindowManager.LayoutParams
     ): View {
-        val handle = LinearLayout(appContext).apply {
+        val handle = DragHandleView(appContext).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(8), dp(10), dp(8))
@@ -466,6 +469,7 @@ class SidebarOverlayManager(
         var downY = 0f
         var startX = 0
         var startY = 0
+        var moved = false
 
         handle.setOnTouchListener { _, event ->
             when (event.actionMasked) {
@@ -474,10 +478,18 @@ class SidebarOverlayManager(
                     downY = event.rawY
                     startX = params.x
                     startY = params.y
+                    moved = false
                     true
                 }
 
                 MotionEvent.ACTION_MOVE -> {
+                    if (
+                        kotlin.math.abs(event.rawX - downX) > dp(6) ||
+                        kotlin.math.abs(event.rawY - downY) > dp(6)
+                    ) {
+                        moved = true
+                    }
+
                     params.x = (
                             startX + (event.rawX - downX).roundToInt()
                             ).coerceIn(
@@ -503,7 +515,13 @@ class SidebarOverlayManager(
                     true
                 }
 
-                MotionEvent.ACTION_UP,
+                MotionEvent.ACTION_UP -> {
+                    if (!moved) {
+                        handle.performClick()
+                    }
+                    true
+                }
+
                 MotionEvent.ACTION_CANCEL -> true
 
                 else -> false
@@ -593,7 +611,7 @@ class SidebarOverlayManager(
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.LEFT
+            gravity = Gravity.TOP or Gravity.START
             x = ((screenWidth() - width) / 2).coerceAtLeast(0)
             y = dp(100)
         }
@@ -662,7 +680,7 @@ class SidebarOverlayManager(
         }
 
         val timer = TextView(appContext).apply {
-            text = "00:00"
+            text = appContext.getString(R.string.recording_timer_initial)
             textSize = 14f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
@@ -727,7 +745,7 @@ class SidebarOverlayManager(
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.LEFT
+            gravity = Gravity.TOP or Gravity.START
             x = ((screenWidth() - width) / 2).coerceAtLeast(0)
             y = dp(100)
         }

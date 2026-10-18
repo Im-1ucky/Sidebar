@@ -1,6 +1,7 @@
 
 package com.example.sidebar.sidebar
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -23,7 +24,10 @@ import kotlin.math.roundToInt
 import com.example.sidebar.recording.RecordingAudioMode
 import android.widget.FrameLayout
 import com.example.sidebar.R
+import androidx.core.content.edit
 
+
+@SuppressLint("ViewConstructor")
 class SidebarOverlayView(
     context: Context,
     private val onExpandChanged: (Boolean) -> Unit,
@@ -165,9 +169,9 @@ class SidebarOverlayView(
             ?: emptySet()
 
     private fun saveSelectedPackages(packages: Set<String>) {
-        shortcutPrefs.edit()
-            .putStringSet("selected_packages", packages.toSet())
-            .apply()
+        shortcutPrefs.edit {
+            putStringSet("selected_packages", packages.toSet())
+        }
     }
 
     private fun getSelectedRecordingAudioMode(): RecordingAudioMode {
@@ -411,7 +415,7 @@ class SidebarOverlayView(
         )
 
         val heading = TextView(context).apply {
-            text = "APP SHORTCUTS"
+            text = context.getString(R.string.sidebar_app_shortcuts)
             setTextColor(Color.DKGRAY)
             textSize = 11f
             letterSpacing = 0.1f
@@ -434,8 +438,8 @@ class SidebarOverlayView(
             addView(
                 shortcutList,
                 ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
+                    LayoutParams.MATCH_PARENT,
+                    LayoutParams.WRAP_CONTENT
                 )
             )
         }
@@ -443,7 +447,7 @@ class SidebarOverlayView(
         val launchableApps = launchableAppsCache
 
         if (launchableApps == null) {
-            addStatusText(shortcutList, "Loading apps…")
+            addStatusText(shortcutList)
         } else {
             val appsByPackage =
                 launchableApps.associateBy { it.packageName }
@@ -452,7 +456,7 @@ class SidebarOverlayView(
                 val app = appsByPackage[packageName]
 
                 if (app != null) {
-                    addAppRow(shortcutList, app, selected = true)
+                    addAppRow(shortcutList, app)
                 }
             }
         }
@@ -463,7 +467,7 @@ class SidebarOverlayView(
         )
 
         val addApp = TextView(context).apply {
-            text = "+  Add app"
+            text = context.getString(R.string.sidebar_add_app)
             setTextColor(foregroundColor)
             textSize = 14f
             gravity = Gravity.CENTER
@@ -522,7 +526,7 @@ class SidebarOverlayView(
         )
 
         val title = TextView(context).apply {
-            text = "ADD APPS"
+            text = context.getString(R.string.sidebar_add_apps)
             textSize = 12f
             letterSpacing = 0.1f
             setTextColor(foregroundColor)
@@ -561,15 +565,13 @@ class SidebarOverlayView(
         val launchableApps = launchableAppsCache
 
         if (launchableApps == null) {
-            addStatusText(list, "Loading apps…")
+            addStatusText(list)
         } else {
-            val selectedPackages = getSelectedPackages()
 
             launchableApps.forEach { app ->
                 addAppRow(
                     container = list,
                     app = app,
-                    selected = app.packageName in selectedPackages
                 ) {
                     val selected = getSelectedPackages().toMutableSet()
 
@@ -588,14 +590,14 @@ class SidebarOverlayView(
             clipChildren = true
             clipToPadding = true
             isVerticalScrollBarEnabled = false
-            overScrollMode = View.OVER_SCROLL_NEVER
+            overScrollMode = OVER_SCROLL_NEVER
             setBackgroundColor(Color.TRANSPARENT)
 
             addView(
                 list,
                 ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
+                    LayoutParams.MATCH_PARENT,
+                    LayoutParams.WRAP_CONTENT
                 )
             )
         }
@@ -619,12 +621,9 @@ class SidebarOverlayView(
         )
     }
 
-    private fun addStatusText(
-        container: LinearLayout,
-        message: String
-    ) {
+    private fun addStatusText(container: LinearLayout) {
         val status = TextView(context).apply {
-            text = message
+            text = context.getString(R.string.sidebar_loading_apps)
             textSize = 13f
             setTextColor(Color.DKGRAY)
             gravity = Gravity.CENTER
@@ -640,7 +639,6 @@ class SidebarOverlayView(
     private fun addAppRow(
         container: LinearLayout,
         app: LaunchableApp,
-        selected: Boolean,
         onSelect: (() -> Unit)? = null
     ) {
         val row = LinearLayout(context).apply {
@@ -746,7 +744,7 @@ class SidebarOverlayView(
         )
 
         val title = TextView(context).apply {
-            text = "SCREENSHOT DELAY"
+            text = context.getString(R.string.sidebar_screenshot_delay)
             textSize = 12f
             letterSpacing = 0.1f
             setTextColor(foregroundColor)
@@ -788,9 +786,9 @@ class SidebarOverlayView(
                 isFocusable = true
 
                 setOnClickListener {
-                    settingsPrefs.edit()
-                        .putInt(KEY_CAPTURE_DELAY, seconds)
-                        .apply()
+                    settingsPrefs.edit {
+                        putInt(KEY_CAPTURE_DELAY, seconds)
+                    }
 
                     showingScreenshotDelayPicker = false
                     render()
@@ -833,7 +831,7 @@ class SidebarOverlayView(
         )
 
         val title = TextView(context).apply {
-            text = "RECORDING AUDIO"
+            text = context.getString(R.string.sidebar_recording_audio)
             textSize = 12f
             letterSpacing = 0.1f
             setTextColor(foregroundColor)
@@ -874,9 +872,9 @@ class SidebarOverlayView(
                 isFocusable = true
 
                 setOnClickListener {
-                    settingsPrefs.edit()
-                        .putString(KEY_RECORDING_AUDIO_MODE, mode.name)
-                        .apply()
+                    settingsPrefs.edit {
+                        putString(KEY_RECORDING_AUDIO_MODE, mode.name)
+                    }
 
                     showingRecordingAudioPicker = false
                     render()

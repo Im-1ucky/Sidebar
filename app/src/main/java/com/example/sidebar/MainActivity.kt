@@ -29,6 +29,9 @@ import com.example.sidebar.ui.dashboard.DashboardScreen
 import com.example.sidebar.ui.dashboard.DashboardViewModel
 import com.example.sidebar.ui.dashboard.ServiceOperation
 import com.example.sidebar.ui.theme.SidebarTheme
+import androidx.core.content.ContextCompat
+import androidx.core.content.edit
+import androidx.core.net.toUri
 
 class MainActivity : ComponentActivity() {
 
@@ -39,7 +42,7 @@ class MainActivity : ComponentActivity() {
     private var waitingForOverlayPermission = false
 
     private val preferences by lazy {
-        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
     }
 
     private var screenshotFolderUri by mutableStateOf<String?>(null)
@@ -99,11 +102,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                 try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        startForegroundService(serviceIntent)
-                    } else {
-                        startService(serviceIntent)
-                    }
+                    startForegroundService(serviceIntent)
 
                     moveTaskToBack(true)
                 } catch (exception: Exception) {
@@ -122,7 +121,7 @@ class MainActivity : ComponentActivity() {
             val data = result.data
             val uri = data?.data
 
-            if (result.resultCode == RESULT_OK && uri != null && data != null) {
+            if (result.resultCode == RESULT_OK && uri != null) {
                 persistFolderSelection(
                     uri = uri,
                     flags = data.flags,
@@ -139,7 +138,7 @@ class MainActivity : ComponentActivity() {
             val data = result.data
             val uri = data?.data
 
-            if (result.resultCode == RESULT_OK && uri != null && data != null) {
+            if (result.resultCode == RESULT_OK && uri != null) {
                 persistFolderSelection(
                     uri = uri,
                     flags = data.flags,
@@ -176,7 +175,7 @@ class MainActivity : ComponentActivity() {
             return "$DEFAULT_FOLDER_PATH (default)"
         }
 
-        val uri = Uri.parse(savedUri)
+        val uri = savedUri.toUri()
 
         val documentId = runCatching {
             DocumentsContract.getTreeDocumentId(uri)
@@ -222,9 +221,9 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-                preferences.edit()
-                    .remove(preferenceKey)
-                    .apply()
+                preferences.edit {
+                    remove(preferenceKey)
+                }
 
                 onSaved(null)
                 return
@@ -235,9 +234,9 @@ class MainActivity : ComponentActivity() {
             val uriString = uri.toString()
             val previousUri = preferences.getString(preferenceKey, null)
 
-            preferences.edit()
-                .putString(preferenceKey, uriString)
-                .apply()
+            preferences.edit {
+                putString(preferenceKey, uriString)
+            }
 
             if (previousUri != null && previousUri != uriString) {
                 releaseFolderPermission(previousUri)
@@ -254,7 +253,7 @@ class MainActivity : ComponentActivity() {
 
         runCatching {
             contentResolver.releasePersistableUriPermission(
-                Uri.parse(savedUri),
+                savedUri.toUri(),
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
                         Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
@@ -266,9 +265,9 @@ class MainActivity : ComponentActivity() {
 
         screenshotFolderUri = null
 
-        preferences.edit()
-            .remove(KEY_FOLDER_URI)
-            .apply()
+        preferences.edit {
+            remove(KEY_FOLDER_URI)
+        }
     }
 
     private fun resetRecordingFolder() {
@@ -276,9 +275,9 @@ class MainActivity : ComponentActivity() {
 
         recordingFolderUri = null
 
-        preferences.edit()
-            .remove(KEY_RECORDING_FOLDER_URI)
-            .apply()
+        preferences.edit {
+            remove(KEY_RECORDING_FOLDER_URI)
+        }
     }
 
     private fun loadRecordingAudioMode(): RecordingAudioMode {
@@ -309,7 +308,7 @@ class MainActivity : ComponentActivity() {
     private fun openOverlaySettings() {
         val permissionIntent = Intent(
             Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-            Uri.parse("package:$packageName")
+            "package:$packageName".toUri()
         )
 
         overlayPermissionLauncher.launch(permissionIntent)
@@ -395,9 +394,9 @@ class MainActivity : ComponentActivity() {
                     onCaptureDelayChanged = { seconds ->
                         captureDelaySeconds = seconds
 
-                        preferences.edit()
-                            .putInt(KEY_CAPTURE_DELAY, seconds)
-                            .apply()
+                        preferences.edit {
+                            putInt(KEY_CAPTURE_DELAY, seconds)
+                        }
                     },
 
                     onChooseScreenshotFolder = {
@@ -425,9 +424,9 @@ class MainActivity : ComponentActivity() {
                     onRecordingAudioModeChanged = { mode ->
                         recordingAudioMode = mode
 
-                        preferences.edit()
-                            .putString(KEY_RECORDING_AUDIO_MODE, mode.name)
-                            .apply()
+                        preferences.edit {
+                            putString(KEY_RECORDING_AUDIO_MODE, mode.name)
+                        }
                     },
 
                     onStart = {
@@ -508,7 +507,7 @@ class MainActivity : ComponentActivity() {
 
         val permissionIntent = Intent(
             Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-            Uri.parse("package:$packageName")
+            "package:$packageName".toUri()
         )
 
         overlayPermissionLauncher.launch(permissionIntent)
@@ -522,16 +521,12 @@ class MainActivity : ComponentActivity() {
             addAction(SidebarService.ACTION_STOPPED)
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(
-                serviceReceiver,
-                filter,
-                Context.RECEIVER_NOT_EXPORTED
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            registerReceiver(serviceReceiver, filter)
-        }
+        ContextCompat.registerReceiver(
+            this,
+            serviceReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         receiverRegistered = true
     }

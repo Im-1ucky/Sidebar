@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.ContentValues
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
@@ -37,6 +36,7 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import androidx.core.graphics.createBitmap
 
 class ScreenshotCaptureService : Service() {
 
@@ -139,43 +139,39 @@ class ScreenshotCaptureService : Service() {
         createNotificationChannel()
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(
-                    NOTIFICATION_ID,
-                    buildNotification(),
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-                )
-            } else {
-                startForeground(
-                    NOTIFICATION_ID,
-                    buildNotification()
-                )
-            }
+            startForeground(
+                NOTIFICATION_ID,
+                buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            )
 
             val manager = getSystemService(
-                Context.MEDIA_PROJECTION_SERVICE
+                MEDIA_PROJECTION_SERVICE
             ) as MediaProjectionManager
 
-            projection = manager.getMediaProjection(
+            val activeProjection = manager.getMediaProjection(
                 resultCode,
                 resultData
             ) ?: error("Android did not provide a screen projection")
 
-            workerThread = HandlerThread("SidebarScreenshot").also {
+            projection = activeProjection
+
+            val thread = HandlerThread("SidebarScreenshot").also {
                 it.start()
             }
+            workerThread = thread
+            workerHandler = Handler(thread.looper)
 
-            workerHandler = Handler(workerThread!!.looper)
-
-            projectionCallback = object : MediaProjection.Callback() {
+            val callback = object : MediaProjection.Callback() {
                 override fun onStop() {
                     Log.i(TAG, "Screen projection stopped")
                     finishCapture()
                 }
             }
+            projectionCallback = callback
 
-            projection!!.registerCallback(
-                projectionCallback!!,
+            activeProjection.registerCallback(
+                callback,
                 workerHandler
             )
 
@@ -252,7 +248,7 @@ class ScreenshotCaptureService : Service() {
                 val rowStride = plane.rowStride
                 val rowPadding = rowStride - pixelStride * width
 
-                val paddedBitmap = Bitmap.createBitmap(
+                val paddedBitmap = createBitmap(
                     width + rowPadding / pixelStride,
                     height,
                     Bitmap.Config.ARGB_8888
@@ -279,9 +275,6 @@ class ScreenshotCaptureService : Service() {
                 // Give immediate visual feedback before PNG compression.
                 showFlash()
 
-                val saveTapTime = tapTime
-                val saveFrameTime = frameTime
-
                 // The capture thread is now free to receive future frames.
                 // Only the save worker compresses and writes the PNG.
                 saveExecutor.execute {
@@ -296,8 +289,8 @@ class ScreenshotCaptureService : Service() {
                             SystemClock.elapsedRealtime() - saveStart
 
                         val totalDuration =
-                            if (saveTapTime > 0L) {
-                                SystemClock.elapsedRealtime() - saveTapTime
+                            if (tapTime > 0L) {
+                                SystemClock.elapsedRealtime() - tapTime
                             } else {
                                 -1L
                             }
@@ -325,7 +318,7 @@ class ScreenshotCaptureService : Service() {
                 Log.i(
                     TAG,
                     "SAVE_QUEUED: frameToQueue=" +
-                            "${SystemClock.elapsedRealtime() - saveFrameTime}ms"
+                            "${SystemClock.elapsedRealtime() - frameTime}ms"
                 )
 
             } catch (exception: Exception) {
@@ -431,12 +424,11 @@ class ScreenshotCaptureService : Service() {
                 return false
             }
 
-            var compressed = false
 
             val compressionStart = SystemClock.elapsedRealtime()
 
-            try {
-                compressed = bitmap.compress(
+            val compressed = try {
+                bitmap.compress(
                     Bitmap.CompressFormat.JPEG,
                     80,
                     output
@@ -647,16 +639,14 @@ class ScreenshotCaptureService : Service() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Screenshot capture",
-                NotificationManager.IMPORTANCE_LOW
-            )
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "Screenshot capture",
+            NotificationManager.IMPORTANCE_LOW
+        )
 
-            getSystemService(NotificationManager::class.java)
-                .createNotificationChannel(channel)
-        }
+        getSystemService(NotificationManager::class.java)
+            .createNotificationChannel(channel)
     }
 
     private fun buildNotification(): Notification {
@@ -678,9 +668,6 @@ class ScreenshotCaptureService : Service() {
         const val EXTRA_RESULT_DATA = "projection_result_data"
         const val EXTRA_FOLDER_URI = "screenshot_folder_uri"
         const val EXTRA_DELAY_SECONDS = "screenshot_delay_seconds"
-
-        const val ACTION_SCREENSHOT_SAVED =
-            "com.example.sidebar.SCREENSHOT_SAVED"
 
         const val ACTION_CAPTURE =
             "com.example.sidebar.SCREENSHOT_CAPTURE"

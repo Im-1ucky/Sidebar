@@ -2,8 +2,6 @@
 package com.example.sidebar.recording
 
 import android.Manifest
-import android.app.Activity
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionConfig
@@ -40,7 +38,7 @@ class RecordingConsentActivity : ComponentActivity() {
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
             if (
-                result.resultCode == Activity.RESULT_OK &&
+                result.resultCode == RESULT_OK &&
                 result.data != null
             ) {
                 val serviceIntent = Intent(
@@ -66,11 +64,7 @@ class RecordingConsentActivity : ComponentActivity() {
                 }
 
                 try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        startForegroundService(serviceIntent)
-                    } else {
-                        startService(serviceIntent)
-                    }
+                    startService(serviceIntent)
                 } finally {
                     finish()
                 }
@@ -97,7 +91,7 @@ class RecordingConsentActivity : ComponentActivity() {
 
     private fun launchScreenCaptureConsent() {
         val manager = getSystemService(
-            Context.MEDIA_PROJECTION_SERVICE
+            MEDIA_PROJECTION_SERVICE
         ) as MediaProjectionManager
 
         val captureIntent =

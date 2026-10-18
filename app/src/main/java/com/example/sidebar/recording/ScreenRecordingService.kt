@@ -7,7 +7,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.ContentValues
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.hardware.display.DisplayManager
@@ -26,6 +25,7 @@ import android.view.WindowManager
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.core.net.toUri
 
 class ScreenRecordingService : Service() {
 
@@ -125,7 +125,7 @@ class ScreenRecordingService : Service() {
             startForegroundCompat()
 
             val manager = getSystemService(
-                Context.MEDIA_PROJECTION_SERVICE
+                MEDIA_PROJECTION_SERVICE
             ) as MediaProjectionManager
 
             projection = manager.getMediaProjection(resultCode, resultData)
@@ -154,7 +154,7 @@ class ScreenRecordingService : Service() {
 
     private fun prepareRecorder() {
         val windowManager =
-            getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            getSystemService(WINDOW_SERVICE) as WindowManager
 
         val bounds = windowManager.currentWindowMetrics.bounds
         val width = (bounds.width() / 2) * 2
@@ -170,13 +170,13 @@ class ScreenRecordingService : Service() {
         val fileName = "Sidebar_$timestamp.mp4"
         val customFolderUri = getSharedPreferences(
             PREFS_NAME,
-            Context.MODE_PRIVATE
+            MODE_PRIVATE
         ).getString(KEY_RECORDING_FOLDER_URI, null)
 
         val descriptor: android.os.ParcelFileDescriptor
 
         if (customFolderUri != null) {
-            val treeUri = Uri.parse(customFolderUri)
+            val treeUri = customFolderUri.toUri()
 
             val parentDocumentUri = DocumentsContract.buildDocumentUriUsingTree(
                 treeUri,
@@ -206,10 +206,7 @@ class ScreenRecordingService : Service() {
                 put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
                 put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
                 put(MediaStore.Video.Media.RELATIVE_PATH, "Pictures/Sidebar")
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    put(MediaStore.Video.Media.IS_PENDING, 1)
-                }
+                put(MediaStore.Video.Media.IS_PENDING, 1)
             }
 
             val createdUri = contentResolver.insert(
@@ -287,7 +284,6 @@ class ScreenRecordingService : Service() {
 
     private fun pauseRecording() {
         if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
             isRecording && !isPaused
         ) {
             try {
@@ -302,7 +298,6 @@ class ScreenRecordingService : Service() {
 
     private fun resumeRecording() {
         if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
             isRecording && isPaused
         ) {
             try {
@@ -348,8 +343,7 @@ class ScreenRecordingService : Service() {
 
             outputUri?.let { uri ->
                 if (
-                    outputIsMediaStore &&
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                    outputIsMediaStore
                 ) {
                     val values = ContentValues().apply {
                         put(MediaStore.Video.Media.IS_PENDING, 0)
@@ -374,40 +368,25 @@ class ScreenRecordingService : Service() {
     private fun startForegroundCompat() {
         val notification = buildNotification()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+        var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
 
-            if (audioMode == RecordingAudioMode.MICROPHONE) {
-                type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            }
-
-            startForeground(NOTIFICATION_ID, notification, type)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        if (audioMode == RecordingAudioMode.MICROPHONE) {
+            type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         }
+
+        startForeground(NOTIFICATION_ID, notification, type)
     }
 
     private fun buildNotification(): Notification {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("Sidebar screen recorder")
-                .setContentText("Screen recording is active")
-                .setSmallIcon(android.R.drawable.presence_video_online)
-                .setOngoing(true)
-                .build()
-        } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-                .setContentTitle("Sidebar screen recorder")
-                .setContentText("Screen recording is active")
-                .setSmallIcon(android.R.drawable.presence_video_online)
-                .setOngoing(true)
-                .build()
-        }
+        return Notification.Builder(this, CHANNEL_ID)
+            .setContentTitle("Sidebar screen recorder")
+            .setContentText("Screen recording is active")
+            .setSmallIcon(android.R.drawable.presence_video_online)
+            .setOngoing(true)
+            .build()
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Sidebar screen recording",
@@ -416,7 +395,6 @@ class ScreenRecordingService : Service() {
 
             getSystemService(NotificationManager::class.java)
                 .createNotificationChannel(channel)
-        }
     }
 
     override fun onDestroy() {
