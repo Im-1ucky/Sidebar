@@ -1,1 +1,5 @@
-1. Open shortcut apps in split mode if possible
+2. Add Readme and Screenshots
+3. Fix the Add apps bar problem
+4. Fix the Arrow Text alignment
+5. Add permissions in dashboard
+6. Clean up non-essentials
