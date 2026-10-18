@@ -90,9 +90,14 @@ The release APK will be generated at:
 ```text
 app/build/outputs/apk/release/app-release-unsigned.apk
 ```
+## 📥 Download
 
 You could venture into the abyss of Gradle builds and dependencies... or take the easy way out.
-url
+<p align="center">
+  <a href="https://github.com/Im-1ucky/Sidebar/releases/latest">
+    <img src="https://img.shields.io/badge/⬇%20Download-Latest%20APK-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download">
+  </a>
+</p>
 
 ## 📁 Permissions and Setup
 
