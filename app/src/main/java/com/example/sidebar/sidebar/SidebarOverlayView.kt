@@ -593,10 +593,17 @@ class SidebarOverlayView(
                 onSelect()
             } else {
                 try {
-                    context.packageManager
+                    val launchIntent = context.packageManager
                         .getLaunchIntentForPackage(app.packageName)
-                        ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        ?.let(context::startActivity)
+
+                    if (launchIntent != null) {
+                        launchIntent.addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK or
+                                    Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT
+                        )
+
+                        context.startActivity(launchIntent)
+                    }
                 } catch (exception: Exception) {
                     Log.e(
                         TAG,
