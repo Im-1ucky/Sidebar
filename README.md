@@ -8,8 +8,23 @@ So it was just me. Anyway.
 
 I wanted a sidebar that could bring those essentials back without needing root access, so I built one, a tiny floating companion for screenshots, screen recordings, and app shortcuts, because digging through your phone to find things gets old.
 
+## 🎬 Demo
+
+See Sidebar in action!
+
+<p align="center">
+  <img src="screenshots/vid.gif" width="100%" alt="Android Sidebar demo">
+</p>
+
 ## 📸 Screenshots
 
+| Dashboard | Floating Sidebar | App Shortcuts |
+|:---:|:---:|:---:|
+| <img src="screenshots/1.jpeg" width="220" alt="Dashboard"> | <img src="screenshots/2.jpeg" width="220" alt="Floating sidebar"> | <img src="screenshots/3.jpeg" width="220" alt="App shortcuts"> |
+
+| Screenshot Delay | Recording Audio |
+|:---:|:---:|
+| <img src="screenshots/5.jpeg" width="220" alt="Screenshot delay settings"> | <img src="screenshots/5.jpeg" width="220" alt="Recording audio settings"> |
 ## ✨ Features
 
 - **Floating sidebar:** Your controls, always a tap away.
