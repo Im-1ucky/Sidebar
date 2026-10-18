@@ -1,3 +1,4 @@
+
 package com.example.sidebar.screenshot
 
 import android.app.Activity
@@ -48,9 +49,16 @@ class ScreenshotConsentActivity : ComponentActivity() {
                     } else {
                         startService(captureIntent)
                     }
+                } else {
+                    sendSessionFailedBroadcast()
                 }
             } catch (e: Exception) {
-                Log.e("ScreenshotConsent", "Unable to start screenshot capture", e)
+                Log.e(
+                    "ScreenshotConsent",
+                    "Unable to start screenshot capture",
+                    e
+                )
+                sendSessionFailedBroadcast()
             } finally {
                 finish()
             }
@@ -73,5 +81,12 @@ class ScreenshotConsentActivity : ComponentActivity() {
             }
 
         consentLauncher.launch(captureIntent)
+    }
+
+    private fun sendSessionFailedBroadcast() {
+        sendBroadcast(
+            Intent(ScreenshotCaptureService.ACTION_SESSION_FAILED)
+                .setPackage(packageName)
+        )
     }
 }

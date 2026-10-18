@@ -57,8 +57,31 @@ class ScreenshotCaptureService : Service() {
         flags: Int,
         startId: Int
     ): Int {
+        when (intent?.action) {
+            ACTION_STOP_SESSION -> {
+                finishCapture()
+                return START_NOT_STICKY
+            }
+
+            ACTION_CAPTURE -> {
+                if (projection == null || finished.get()) {
+                    Log.w(TAG, "No active screenshot session")
+                    stopSelf(startId)
+                    return START_NOT_STICKY
+                }
+
+                val delaySeconds = intent.getIntExtra(
+                    EXTRA_DELAY_SECONDS,
+                    0
+                ).coerceIn(0, 5)
+
+                requestCapture(delaySeconds)
+                return START_NOT_STICKY
+            }
+        }
+
         if (projection != null) {
-            Log.w(TAG, "Capture already in progress")
+            Log.w(TAG, "Screenshot session already active")
             return START_NOT_STICKY
         }
 
@@ -69,51 +92,64 @@ class ScreenshotCaptureService : Service() {
 
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
 
-        val resultData: Intent? = if (Build.VERSION.SDK_INT >= 33) {
-            intent.getParcelableExtra(
-                EXTRA_RESULT_DATA,
-                Intent::class.java
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            intent.getParcelableExtra(EXTRA_RESULT_DATA)
-        }
+        val resultData: Intent? =
+            if (Build.VERSION.SDK_INT >= 33) {
+                intent.getParcelableExtra(
+                    EXTRA_RESULT_DATA,
+                    Intent::class.java
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(EXTRA_RESULT_DATA)
+            }
 
         if (resultCode != RESULT_OK_VALUE || resultData == null) {
             stopSelf(startId)
             return START_NOT_STICKY
         }
 
-        folderUri = intent.getStringExtra(EXTRA_FOLDER_URI)?.let(Uri::parse)
-        val delaySeconds =
-            intent.getIntExtra(EXTRA_DELAY_SECONDS, 0).coerceIn(0, 5)
+        folderUri = intent.getStringExtra(EXTRA_FOLDER_URI)
+            ?.let(Uri::parse)
+
+        val delaySeconds = intent.getIntExtra(
+            EXTRA_DELAY_SECONDS,
+            0
+        ).coerceIn(0, 5)
 
         createNotificationChannel()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                buildNotification(),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, buildNotification())
-        }
-
         try {
-            val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE)
-                    as MediaProjectionManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    buildNotification(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                )
+            } else {
+                startForeground(
+                    NOTIFICATION_ID,
+                    buildNotification()
+                )
+            }
 
-            projection = manager.getMediaProjection(resultCode, resultData)
-                ?: error("Android did not provide a screen projection")
+            val manager = getSystemService(
+                Context.MEDIA_PROJECTION_SERVICE
+            ) as MediaProjectionManager
+
+            projection = manager.getMediaProjection(
+                resultCode,
+                resultData
+            ) ?: error("Android did not provide a screen projection")
 
             workerThread = HandlerThread("SidebarScreenshot").also {
                 it.start()
             }
+
             workerHandler = Handler(workerThread!!.looper)
 
             projectionCallback = object : MediaProjection.Callback() {
                 override fun onStop() {
+                    Log.i(TAG, "Screen projection stopped")
                     finishCapture()
                 }
             }
@@ -123,12 +159,15 @@ class ScreenshotCaptureService : Service() {
                 workerHandler
             )
 
-            mainHandler.postDelayed(
-                { captureOneFrame() },
-                delaySeconds * 1000L + 400L
-            )
+            initializeCaptureSession(delaySeconds)
+
         } catch (exception: Exception) {
             Log.e(TAG, "Unable to initialize screen capture", exception)
+
+            sendBroadcast(
+                Intent(ACTION_SESSION_FAILED).setPackage(packageName)
+            )
+
             showToast("Couldn't start screenshot")
             finishCapture()
         }
@@ -136,94 +175,116 @@ class ScreenshotCaptureService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun captureOneFrame() {
+    private fun initializeCaptureSession(initialDelaySeconds: Int) {
+        val windowManager =
+            getSystemService(WINDOW_SERVICE) as WindowManager
+
+        val bounds = windowManager.currentWindowMetrics.bounds
+        val width = bounds.width()
+        val height = bounds.height()
+        val density = resources.configuration.densityDpi
+
+        require(width > 0 && height > 0) {
+            "Invalid screen dimensions"
+        }
+
+        val reader = ImageReader.newInstance(
+            width,
+            height,
+            PixelFormat.RGBA_8888,
+            2
+        )
+
+        imageReader = reader
+
+        reader.setOnImageAvailableListener({ source ->
+            val image = source.acquireLatestImage()
+                ?: return@setOnImageAvailableListener
+
+            try {
+                if (
+                    finished.get() ||
+                    !captureRequested.compareAndSet(true, false)
+                ) {
+                    return@setOnImageAvailableListener
+                }
+
+                val plane = image.planes[0]
+                val pixelStride = plane.pixelStride
+                val rowStride = plane.rowStride
+                val rowPadding =
+                    rowStride - pixelStride * width
+
+                val paddedBitmap = Bitmap.createBitmap(
+                    width + rowPadding / pixelStride,
+                    height,
+                    Bitmap.Config.ARGB_8888
+                )
+
+                paddedBitmap.copyPixelsFromBuffer(plane.buffer)
+
+                val bitmap = Bitmap.createBitmap(
+                    paddedBitmap,
+                    0,
+                    0,
+                    width,
+                    height
+                )
+
+                paddedBitmap.recycle()
+
+                val saved = saveBitmap(bitmap)
+                bitmap.recycle()
+
+                if (saved) {
+                    showToast("Screenshot saved")
+                    showFlash()
+                } else {
+                    showToast("Couldn't save screenshot")
+                }
+
+            } catch (exception: Exception) {
+                Log.e(TAG, "Failed to save screenshot", exception)
+                showToast("Couldn't save screenshot")
+            } finally {
+                image.close()
+            }
+        }, workerHandler)
+
+        virtualDisplay = projection?.createVirtualDisplay(
+            "SidebarScreenshot",
+            width,
+            height,
+            density,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+            reader.surface,
+            null,
+            workerHandler
+        ) ?: error("Could not create virtual display")
+
+        sendBroadcast(
+            Intent(ACTION_SESSION_READY).setPackage(packageName)
+        )
+
+        requestCapture(initialDelaySeconds)
+
+        Log.i(TAG, "Screenshot session ready")
+    }
+
+    private val captureRequested = AtomicBoolean(false)
+
+    private fun requestCapture(delaySeconds: Int) {
         if (finished.get()) return
 
-        try {
-            val windowManager =
-                getSystemService(WINDOW_SERVICE) as WindowManager
-            val metrics = windowManager.currentWindowMetrics
-            val bounds = metrics.bounds
-            val width = bounds.width()
-            val height = bounds.height()
-            val density = resources.configuration.densityDpi
+        mainHandler.postDelayed({
+            if (finished.get()) return@postDelayed
 
-            imageReader = ImageReader.newInstance(
-                width,
-                height,
-                PixelFormat.RGBA_8888,
-                2
-            )
-
-            val reader = imageReader!!
-
-            reader.setOnImageAvailableListener({ source ->
-                val image = source.acquireLatestImage()
-                    ?: return@setOnImageAvailableListener
-
-                try {
-                    if (finished.get()) return@setOnImageAvailableListener
-
-                    val plane = image.planes[0]
-                    val pixelStride = plane.pixelStride
-                    val rowStride = plane.rowStride
-                    val rowPadding =
-                        rowStride - pixelStride * width
-
-                    val paddedBitmap = Bitmap.createBitmap(
-                        width + rowPadding / pixelStride,
-                        height,
-                        Bitmap.Config.ARGB_8888
-                    )
-
-                    paddedBitmap.copyPixelsFromBuffer(plane.buffer)
-
-                    val bitmap = Bitmap.createBitmap(
-                        paddedBitmap,
-                        0,
-                        0,
-                        width,
-                        height
-                    )
-
-                    paddedBitmap.recycle()
-
-                    val saved = saveBitmap(bitmap)
-                    bitmap.recycle()
-
-                    if (saved) {
-                        showToast("Screenshot saved")
-                        showFlash()
-                    } else {
-                        showToast("Couldn't save screenshot")
-                    }
-
-                    finishCapture()
-                } catch (exception: Exception) {
-                    Log.e(TAG, "Failed to save screenshot", exception)
-                    showToast("Couldn't save screenshot")
-                    finishCapture()
-                } finally {
-                    image.close()
-                }
-            }, workerHandler)
-
-            // This projection token is used for exactly one virtual display.
-            virtualDisplay = projection!!.createVirtualDisplay(
-                "SidebarScreenshot",
-                width,
-                height,
-                density,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                reader.surface,
-                null,
-                workerHandler
-            )
-        } catch (exception: Exception) {
-            Log.e(TAG, "Failed to capture screen", exception)
-            showToast("Couldn't capture screen")
-            finishCapture()
-        }
+            if (!captureRequested.compareAndSet(false, true)) {
+                Log.w(TAG, "A screenshot is already waiting to be captured")
+            } else {
+                Log.i(TAG, "Screenshot requested")
+            }
+        }, delaySeconds * 1000L + 400L)
     }
 
     private fun saveBitmap(bitmap: Bitmap): Boolean {
@@ -466,5 +527,14 @@ class ScreenshotCaptureService : Service() {
         const val EXTRA_DELAY_SECONDS = "screenshot_delay_seconds"
         const val ACTION_SCREENSHOT_SAVED =
             "com.example.sidebar.SCREENSHOT_SAVED"
+
+        const val ACTION_CAPTURE = "com.example.sidebar.SCREENSHOT_CAPTURE"
+        const val ACTION_STOP_SESSION = "com.example.sidebar.SCREENSHOT_STOP_SESSION"
+
+        const val ACTION_SESSION_READY =
+            "com.example.sidebar.SCREENSHOT_SESSION_READY"
+
+        const val ACTION_SESSION_FAILED =
+            "com.example.sidebar.SCREENSHOT_SESSION_FAILED"
     }
 }

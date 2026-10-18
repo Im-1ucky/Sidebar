@@ -1,23 +1,27 @@
 
 package com.example.sidebar.sidebar
 
+import android.app.AlertDialog
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
+import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
+import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import android.view.ViewGroup
-import android.widget.ImageView
-import android.widget.ScrollView
-import android.content.Intent
-import android.graphics.drawable.Drawable
 
 class SidebarOverlayView(
     context: Context,
@@ -44,6 +48,15 @@ class SidebarOverlayView(
 
     private val handle = View(context)
     private val handler = Handler(Looper.getMainLooper())
+
+    private val appLoader = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "SidebarAppLoader").apply {
+            isDaemon = true
+        }
+    }
+
+    private var launchableAppsCache: List<LaunchableApp>? = null
+    private var loadingLaunchableApps = false
 
     private val panelColor = Color.argb(240, 255, 255, 255)
     private val actionColor = Color.argb(210, 225, 225, 225)
@@ -83,8 +96,13 @@ class SidebarOverlayView(
 
     private companion object {
         const val KEY_CAPTURE_DELAY = "screenshot_delay_seconds"
+        const val TAG = "SidebarOverlayView"
     }
 
+    /**
+     * Runs only on the background executor.
+     * Package queries and app label/icon loading must not block the UI thread.
+     */
     private fun getLaunchableApps(): List<LaunchableApp> {
         val intent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
@@ -110,6 +128,36 @@ class SidebarOverlayView(
             }
             .distinctBy { it.packageName }
             .sortedBy { it.name.lowercase() }
+    }
+
+    /**
+     * Starts app discovery once. Results are cached and UI rendering
+     * is triggered on the main thread when discovery completes.
+     */
+    private fun ensureLaunchableAppsLoaded() {
+        if (launchableAppsCache != null || loadingLaunchableApps) {
+            return
+        }
+
+        loadingLaunchableApps = true
+
+        appLoader.execute {
+            val apps = try {
+                getLaunchableApps()
+            } catch (exception: Exception) {
+                Log.e(TAG, "Unable to load launchable apps", exception)
+                emptyList()
+            }
+
+            handler.post {
+                launchableAppsCache = apps
+                loadingLaunchableApps = false
+
+                if (isExpanded) {
+                    render()
+                }
+            }
+        }
     }
 
     private fun getSelectedPackages(): Set<String> =
@@ -149,7 +197,8 @@ class SidebarOverlayView(
                     val dx = event.rawX - downX
                     val dy = event.rawY - downY
 
-                    if (!longPressTriggered &&
+                    if (
+                        !longPressTriggered &&
                         (abs(dx) > touchSlop || abs(dy) > touchSlop)
                     ) {
                         handler.removeCallbacks(longPressRunnable)
@@ -270,6 +319,9 @@ class SidebarOverlayView(
             return
         }
 
+        // Start app discovery without blocking rendering or touch events.
+        ensureLaunchableAppsLoaded()
+
         orientation = VERTICAL
         gravity = Gravity.CENTER_HORIZONTAL
         background = roundedBackground(panelColor, 24)
@@ -353,14 +405,19 @@ class SidebarOverlayView(
             )
         }
 
-        val launchableApps = getLaunchableApps()
-        val appsByPackage = launchableApps.associateBy { it.packageName }
+        val launchableApps = launchableAppsCache
 
-        getSelectedPackages().forEach { packageName ->
-            val app = appsByPackage[packageName]
+        if (launchableApps == null) {
+            addStatusText(shortcutList, "Loading apps…")
+        } else {
+            val appsByPackage = launchableApps.associateBy { it.packageName }
 
-            if (app != null) {
-                addAppRow(shortcutList, app, selected = true)
+            getSelectedPackages().forEach { packageName ->
+                val app = appsByPackage[packageName]
+
+                if (app != null) {
+                    addAppRow(shortcutList, app, selected = true)
+                }
             }
         }
 
@@ -427,20 +484,28 @@ class SidebarOverlayView(
             orientation = VERTICAL
         }
 
-        getLaunchableApps().forEach { app ->
-            addAppRow(
-                list,
-                app,
-                selected = app.packageName in getSelectedPackages()
-            ) {
-                val selected = getSelectedPackages().toMutableSet()
+        val launchableApps = launchableAppsCache
 
-                if (!selected.add(app.packageName)) {
-                    selected.remove(app.packageName)
+        if (launchableApps == null) {
+            addStatusText(list, "Loading apps…")
+        } else {
+            val selectedPackages = getSelectedPackages()
+
+            launchableApps.forEach { app ->
+                addAppRow(
+                    list,
+                    app,
+                    selected = app.packageName in selectedPackages
+                ) {
+                    val selected = getSelectedPackages().toMutableSet()
+
+                    if (!selected.add(app.packageName)) {
+                        selected.remove(app.packageName)
+                    }
+
+                    saveSelectedPackages(selected)
+                    render()
                 }
-
-                saveSelectedPackages(selected)
-                render()
             }
         }
 
@@ -457,6 +522,24 @@ class SidebarOverlayView(
         addView(
             scroll,
             LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
+        )
+    }
+
+    private fun addStatusText(
+        container: LinearLayout,
+        message: String
+    ) {
+        val status = TextView(context).apply {
+            text = message
+            textSize = 13f
+            setTextColor(Color.DKGRAY)
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(16), dp(8), dp(16))
+        }
+
+        container.addView(
+            status,
+            LayoutParams(LayoutParams.MATCH_PARENT, dp(52))
         )
     }
 
@@ -515,8 +598,8 @@ class SidebarOverlayView(
                         ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         ?.let(context::startActivity)
                 } catch (exception: Exception) {
-                    android.util.Log.e(
-                        "SidebarOverlayView",
+                    Log.e(
+                        TAG,
                         "Unable to launch ${app.packageName}",
                         exception
                     )
@@ -613,7 +696,7 @@ class SidebarOverlayView(
     }
 
     private fun showRecordingAudioPicker() {
-        val dialog = android.app.AlertDialog.Builder(
+        val dialog = AlertDialog.Builder(
             context,
             android.R.style.Theme_DeviceDefault_Dialog_Alert
         )
@@ -635,7 +718,7 @@ class SidebarOverlayView(
             .create()
 
         dialog.window?.setType(
-            android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         )
 
         dialog.show()
@@ -667,6 +750,7 @@ class SidebarOverlayView(
             }
         }
     }
+
     private fun roundedBackground(
         color: Int,
         radiusDp: Int

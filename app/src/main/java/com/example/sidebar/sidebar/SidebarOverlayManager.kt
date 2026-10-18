@@ -1,25 +1,40 @@
 
 package com.example.sidebar.sidebar
 
+import android.content.BroadcastReceiver
 import android.content.ComponentCallbacks
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
+import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import kotlin.math.roundToInt
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import com.example.sidebar.recording.RecordingController
+import com.example.sidebar.recording.ScreenRecordingService
+import com.example.sidebar.screenshot.ScreenshotCaptureService
+import kotlin.math.roundToInt
 
 class SidebarOverlayManager(
     context: Context,
     private val onScreenshot: () -> Unit
 ) {
     private val appContext = context.applicationContext
+
     private val windowManager =
         appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
@@ -33,6 +48,93 @@ class SidebarOverlayManager(
 
     private val recordingController = RecordingController(appContext)
 
+    private var screenshotPill: View? = null
+    private var screenshotReceiverRegistered = false
+
+    private var recordingPill: View? = null
+    private var recordingTimer: TextView? = null
+    private var recordingPauseButton: TextView? = null
+    private var recordingReceiverRegistered = false
+    private var recordingPaused = false
+    private var recordingStartedAt = 0L
+    private var pausedDuration = 0L
+
+    private val recordingHandler = Handler(Looper.getMainLooper())
+
+    private val recordingTimerRunnable = object : Runnable {
+        override fun run() {
+            if (recordingPill == null) return
+
+            val elapsed = if (recordingPaused) {
+                pausedDuration
+            } else {
+                pausedDuration +
+                        (SystemClock.elapsedRealtime() - recordingStartedAt)
+            }
+
+            val totalSeconds = elapsed / 1000
+            recordingTimer?.text = String.format(
+                java.util.Locale.US,
+                "%02d:%02d",
+                totalSeconds / 60,
+                totalSeconds % 60
+            )
+
+            recordingHandler.postDelayed(this, 1000)
+        }
+    }
+
+    private val screenshotPreferences = appContext.getSharedPreferences(
+        "sidebar_preferences",
+        Context.MODE_PRIVATE
+    )
+
+    private val screenshotSessionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                ScreenshotCaptureService.ACTION_SESSION_READY -> {
+                    showScreenshotPill()
+                }
+
+                ScreenshotCaptureService.ACTION_SESSION_FAILED -> {
+                    removeScreenshotPill()
+                }
+            }
+        }
+    }
+
+    private val recordingReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                ScreenRecordingService.ACTION_RECORDING_READY -> {
+                    showRecordingPill()
+                }
+
+                ScreenRecordingService.ACTION_RECORDING_PAUSED -> {
+                    if (!recordingPaused) {
+                        pausedDuration +=
+                            SystemClock.elapsedRealtime() - recordingStartedAt
+                        recordingPaused = true
+                        updateRecordingPauseButton()
+                    }
+                }
+
+                ScreenRecordingService.ACTION_RECORDING_RESUMED -> {
+                    if (recordingPaused) {
+                        recordingStartedAt = SystemClock.elapsedRealtime()
+                        recordingPaused = false
+                        updateRecordingPauseButton()
+                    }
+                }
+
+                ScreenRecordingService.ACTION_RECORDING_STOPPED,
+                ScreenRecordingService.ACTION_RECORDING_FAILED -> {
+                    removeRecordingPill()
+                }
+            }
+        }
+    }
+
     private val configurationCallbacks = object : ComponentCallbacks {
         override fun onConfigurationChanged(newConfig: Configuration) {
             repositionForCurrentScreen()
@@ -41,12 +143,86 @@ class SidebarOverlayManager(
         override fun onLowMemory() = Unit
     }
 
+    private fun registerScreenshotReceiver() {
+        if (screenshotReceiverRegistered) return
+
+        val filter = IntentFilter().apply {
+            addAction(ScreenshotCaptureService.ACTION_SESSION_READY)
+            addAction(ScreenshotCaptureService.ACTION_SESSION_FAILED)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            appContext.registerReceiver(
+                screenshotSessionReceiver,
+                filter,
+                Context.RECEIVER_NOT_EXPORTED
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            appContext.registerReceiver(screenshotSessionReceiver, filter)
+        }
+
+        screenshotReceiverRegistered = true
+    }
+
+    private fun unregisterScreenshotReceiver() {
+        if (!screenshotReceiverRegistered) return
+
+        try {
+            appContext.unregisterReceiver(screenshotSessionReceiver)
+        } catch (exception: Exception) {
+            Log.w(TAG, "Unable to unregister screenshot receiver", exception)
+        } finally {
+            screenshotReceiverRegistered = false
+        }
+    }
+
+    private fun registerRecordingReceiver() {
+        if (recordingReceiverRegistered) return
+
+        val filter = IntentFilter().apply {
+            addAction(ScreenRecordingService.ACTION_RECORDING_READY)
+            addAction(ScreenRecordingService.ACTION_RECORDING_PAUSED)
+            addAction(ScreenRecordingService.ACTION_RECORDING_RESUMED)
+            addAction(ScreenRecordingService.ACTION_RECORDING_STOPPED)
+            addAction(ScreenRecordingService.ACTION_RECORDING_FAILED)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            appContext.registerReceiver(
+                recordingReceiver,
+                filter,
+                Context.RECEIVER_NOT_EXPORTED
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            appContext.registerReceiver(recordingReceiver, filter)
+        }
+
+        recordingReceiverRegistered = true
+    }
+
+    private fun unregisterRecordingReceiver() {
+        if (!recordingReceiverRegistered) return
+
+        try {
+            appContext.unregisterReceiver(recordingReceiver)
+        } catch (exception: Exception) {
+            Log.w(TAG, "Unable to unregister recording receiver", exception)
+        } finally {
+            recordingReceiverRegistered = false
+        }
+    }
+
     fun show() {
         if (overlay != null) return
 
         check(Settings.canDrawOverlays(appContext)) {
             "Display over other apps permission is required."
         }
+
+        registerScreenshotReceiver()
+        registerRecordingReceiver()
 
         val outsideView = View(appContext).apply {
             background = ColorDrawable(Color.TRANSPARENT)
@@ -86,6 +262,7 @@ class SidebarOverlayManager(
 
         val sidebarView = SidebarOverlayView(
             context = appContext,
+
             onExpandChanged = { expanded ->
                 params.width = dp(if (expanded) 260 else 12)
                 params.height = dp(if (expanded) 440 else 100)
@@ -102,6 +279,7 @@ class SidebarOverlayManager(
                 clampPosition(params, expanded)
                 updateOverlayLayout()
             },
+
             onDragBy = { deltaX, deltaY ->
                 params.x = (params.x + deltaX.roundToInt()).coerceIn(
                     0,
@@ -115,6 +293,7 @@ class SidebarOverlayManager(
 
                 updateOverlayLayout()
             },
+
             onDragFinished = { rawX ->
                 anchoredLeft = rawX < screenWidth() / 2f
                 params.width = dp(12)
@@ -128,6 +307,7 @@ class SidebarOverlayManager(
                 clampPosition(params, false)
                 updateOverlayLayout()
             },
+
             onDragModeChanged = { active ->
                 if (overlay?.isExpanded != true) {
                     params.width = dp(if (active) 20 else 12)
@@ -141,11 +321,16 @@ class SidebarOverlayManager(
                     updateOverlayLayout()
                 }
             },
+
             onSwipeInward = { dx ->
                 val inward = if (anchoredLeft) dx > 0 else dx < 0
                 if (inward) overlay?.changeExpanded(true)
             },
-            onScreenshot = onScreenshot,
+
+            onScreenshot = {
+                onScreenshot()
+            },
+
             onRecord = { audioMode ->
                 recordingController.start(audioMode)
             }
@@ -167,6 +352,7 @@ class SidebarOverlayManager(
                 if (sidebarView.isAttachedToWindow) {
                     windowManager.removeView(sidebarView)
                 }
+
                 if (outsideView.isAttachedToWindow) {
                     windowManager.removeView(outsideView)
                 }
@@ -175,6 +361,8 @@ class SidebarOverlayManager(
                 layoutParams = null
                 outsideTouchView = null
                 outsideTouchParams = null
+                unregisterScreenshotReceiver()
+                unregisterRecordingReceiver()
             }
 
             throw exception
@@ -192,7 +380,7 @@ class SidebarOverlayManager(
         }
 
         params.width = dp(if (sidebarView.isExpanded) 260 else 12)
-        params.height = dp(if (sidebarView.isExpanded) 320 else 100)
+        params.height = dp(if (sidebarView.isExpanded) 440 else 100)
 
         params.x = if (anchoredLeft) {
             0
@@ -232,7 +420,272 @@ class SidebarOverlayManager(
         }
     }
 
+    private fun showScreenshotPill() {
+        if (screenshotPill != null) return
+        if (!Settings.canDrawOverlays(appContext)) return
+
+        val pill = LinearLayout(appContext).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+
+            background = GradientDrawable().apply {
+                setColor(Color.rgb(30, 30, 30))
+                cornerRadius = dp(28).toFloat()
+            }
+        }
+
+        val cameraButton = ImageView(appContext).apply {
+            setImageResource(android.R.drawable.ic_menu_camera)
+            setColorFilter(Color.WHITE)
+            contentDescription = "Take screenshot"
+            isClickable = true
+            isFocusable = true
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+
+            setOnClickListener {
+                val delay = screenshotPreferences.getInt(
+                    "screenshot_delay_seconds",
+                    0
+                )
+
+                val intent = Intent(
+                    appContext,
+                    ScreenshotCaptureService::class.java
+                ).apply {
+                    action = ScreenshotCaptureService.ACTION_CAPTURE
+                    putExtra(
+                        ScreenshotCaptureService.EXTRA_DELAY_SECONDS,
+                        delay
+                    )
+                }
+
+                try {
+                    appContext.startService(intent)
+                } catch (exception: Exception) {
+                    Log.e(TAG, "Unable to request screenshot", exception)
+                }
+            }
+        }
+
+        pill.addView(
+            cameraButton,
+            LinearLayout.LayoutParams(dp(48), dp(48))
+        )
+
+        val closeButton = TextView(appContext).apply {
+            text = "×"
+            textSize = 28f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            contentDescription = "Close screenshot mode"
+            isClickable = true
+            isFocusable = true
+
+            setOnClickListener {
+                closeScreenshotPill()
+            }
+        }
+
+        pill.addView(
+            closeButton,
+            LinearLayout.LayoutParams(dp(40), dp(48))
+        )
+
+        val params = WindowManager.LayoutParams(
+            dp(116),
+            dp(60),
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = dp(100)
+        }
+
+        try {
+            windowManager.addView(pill, params)
+            screenshotPill = pill
+        } catch (exception: Exception) {
+            Log.e(TAG, "Unable to show screenshot pill", exception)
+        }
+    }
+
+    private fun removeScreenshotPill() {
+        screenshotPill?.let { pill ->
+            try {
+                if (pill.isAttachedToWindow) {
+                    windowManager.removeView(pill)
+                }
+            } catch (exception: Exception) {
+                Log.e(TAG, "Unable to remove screenshot pill", exception)
+            }
+        }
+
+        screenshotPill = null
+    }
+
+    private fun closeScreenshotPill() {
+        removeScreenshotPill()
+
+        try {
+            appContext.startService(
+                Intent(
+                    appContext,
+                    ScreenshotCaptureService::class.java
+                ).apply {
+                    action = ScreenshotCaptureService.ACTION_STOP_SESSION
+                }
+            )
+        } catch (exception: Exception) {
+            Log.e(TAG, "Unable to stop screenshot session", exception)
+        }
+    }
+
+    private fun showRecordingPill() {
+        if (recordingPill != null) return
+        if (!Settings.canDrawOverlays(appContext)) return
+
+        recordingPaused = false
+        pausedDuration = 0L
+        recordingStartedAt = SystemClock.elapsedRealtime()
+
+        val pill = LinearLayout(appContext).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(6), dp(8), dp(6))
+
+            background = GradientDrawable().apply {
+                setColor(Color.rgb(30, 30, 30))
+                cornerRadius = dp(28).toFloat()
+            }
+        }
+
+        val timer = TextView(appContext).apply {
+            text = "00:00"
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+        }
+
+        recordingTimer = timer
+
+        pill.addView(
+            timer,
+            LinearLayout.LayoutParams(dp(64), dp(48))
+        )
+
+        val pauseButton = TextView(appContext).apply {
+            text = "Ⅱ"
+            textSize = 20f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            contentDescription = "Pause recording"
+            isClickable = true
+            isFocusable = true
+
+            setOnClickListener {
+                if (recordingPaused) {
+                    recordingController.resume()
+                } else {
+                    recordingController.pause()
+                }
+            }
+        }
+
+        recordingPauseButton = pauseButton
+
+        pill.addView(
+            pauseButton,
+            LinearLayout.LayoutParams(dp(44), dp(48))
+        )
+
+        val stopButton = TextView(appContext).apply {
+            text = "■"
+            textSize = 20f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            contentDescription = "Stop recording"
+            isClickable = true
+            isFocusable = true
+
+            setOnClickListener {
+                recordingController.stop()
+            }
+        }
+
+        pill.addView(
+            stopButton,
+            LinearLayout.LayoutParams(dp(44), dp(48))
+        )
+
+        val params = WindowManager.LayoutParams(
+            dp(176),
+            dp(60),
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = dp(100)
+        }
+
+        try {
+            windowManager.addView(pill, params)
+            recordingPill = pill
+
+            recordingHandler.removeCallbacks(recordingTimerRunnable)
+            recordingHandler.post(recordingTimerRunnable)
+        } catch (exception: Exception) {
+            recordingPill = null
+            recordingTimer = null
+            recordingPauseButton = null
+            Log.e(TAG, "Unable to show recording pill", exception)
+        }
+    }
+
+    private fun updateRecordingPauseButton() {
+        recordingPauseButton?.apply {
+            text = if (recordingPaused) "▶" else "Ⅱ"
+            contentDescription = if (recordingPaused) {
+                "Resume recording"
+            } else {
+                "Pause recording"
+            }
+        }
+    }
+
+    private fun removeRecordingPill() {
+        recordingHandler.removeCallbacks(recordingTimerRunnable)
+
+        recordingPill?.let { pill ->
+            try {
+                if (pill.isAttachedToWindow) {
+                    windowManager.removeView(pill)
+                }
+            } catch (exception: Exception) {
+                Log.e(TAG, "Unable to remove recording pill", exception)
+            }
+        }
+
+        recordingPill = null
+        recordingTimer = null
+        recordingPauseButton = null
+        recordingPaused = false
+        recordingStartedAt = 0L
+        pausedDuration = 0L
+    }
+
     fun hide() {
+        closeScreenshotPill()
+        unregisterScreenshotReceiver()
+
+        // Stop the recording pill timer, but do not stop an active recording.
+        // Keep the pill visible for an active recording session.
+        unregisterRecordingReceiver()
+
         try {
             if (callbacksRegistered) {
                 appContext.unregisterComponentCallbacks(configurationCallbacks)
@@ -240,11 +693,15 @@ class SidebarOverlayManager(
             }
 
             outsideTouchView?.let {
-                if (it.isAttachedToWindow) windowManager.removeView(it)
+                if (it.isAttachedToWindow) {
+                    windowManager.removeView(it)
+                }
             }
 
             overlay?.let {
-                if (it.isAttachedToWindow) windowManager.removeView(it)
+                if (it.isAttachedToWindow) {
+                    windowManager.removeView(it)
+                }
             }
         } finally {
             overlay = null
@@ -262,4 +719,8 @@ class SidebarOverlayManager(
 
     private fun dp(value: Int): Int =
         (value * appContext.resources.displayMetrics.density).roundToInt()
+
+    private companion object {
+        const val TAG = "SidebarOverlayManager"
+    }
 }

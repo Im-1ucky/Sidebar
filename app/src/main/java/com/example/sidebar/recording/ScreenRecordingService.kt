@@ -33,6 +33,17 @@ class ScreenRecordingService : Service() {
         const val ACTION_RESUME = "com.example.sidebar.RECORD_RESUME"
         const val ACTION_STOP = "com.example.sidebar.RECORD_STOP"
 
+        const val ACTION_RECORDING_READY =
+            "com.example.sidebar.RECORDING_READY"
+        const val ACTION_RECORDING_PAUSED =
+            "com.example.sidebar.RECORDING_PAUSED"
+        const val ACTION_RECORDING_RESUMED =
+            "com.example.sidebar.RECORDING_RESUMED"
+        const val ACTION_RECORDING_STOPPED =
+            "com.example.sidebar.RECORDING_STOPPED"
+        const val ACTION_RECORDING_FAILED =
+            "com.example.sidebar.RECORDING_FAILED"
+
         const val EXTRA_AUDIO_MODE = "audio_mode"
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
@@ -49,8 +60,13 @@ class ScreenRecordingService : Service() {
     private var isRecording = false
     private var isPaused = false
     private var isFinishing = false
-
     private var audioMode = RecordingAudioMode.NONE
+
+    private fun broadcastRecordingState(action: String) {
+        sendBroadcast(
+            Intent(action).setPackage(packageName)
+        )
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -88,6 +104,7 @@ class ScreenRecordingService : Service() {
             }
 
         if (resultCode != android.app.Activity.RESULT_OK || resultData == null) {
+            broadcastRecordingState(ACTION_RECORDING_FAILED)
             stopSelf()
             return
         }
@@ -119,8 +136,12 @@ class ScreenRecordingService : Service() {
             )
 
             prepareRecorder()
+            if (isRecording) {
+                broadcastRecordingState(ACTION_RECORDING_READY)
+            }
         } catch (exception: Exception) {
             Log.e(TAG, "Failed to start recording", exception)
+            broadcastRecordingState(ACTION_RECORDING_FAILED)
             finishRecording()
         }
     }
@@ -130,7 +151,6 @@ class ScreenRecordingService : Service() {
             getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
         val bounds = windowManager.currentWindowMetrics.bounds
-
         val width = (bounds.width() / 2) * 2
         val height = (bounds.height() / 2) * 2
         require(width > 0 && height > 0) { "Invalid screen dimensions" }
@@ -211,12 +231,14 @@ class ScreenRecordingService : Service() {
     }
 
     private fun pauseRecording() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
             isRecording && !isPaused
         ) {
             try {
                 recorder?.pause()
                 isPaused = true
+                broadcastRecordingState(ACTION_RECORDING_PAUSED)
             } catch (exception: Exception) {
                 Log.e(TAG, "Pause failed", exception)
             }
@@ -224,12 +246,14 @@ class ScreenRecordingService : Service() {
     }
 
     private fun resumeRecording() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
             isRecording && isPaused
         ) {
             try {
                 recorder?.resume()
                 isPaused = false
+                broadcastRecordingState(ACTION_RECORDING_RESUMED)
             } catch (exception: Exception) {
                 Log.e(TAG, "Resume failed", exception)
             }
@@ -241,7 +265,9 @@ class ScreenRecordingService : Service() {
         isFinishing = true
 
         try {
-            if (isRecording) recorder?.stop()
+            if (isRecording) {
+                recorder?.stop()
+            }
         } catch (exception: Exception) {
             Log.e(TAG, "Could not finalize recording", exception)
             outputUri?.let { contentResolver.delete(it, null, null) }
@@ -276,6 +302,7 @@ class ScreenRecordingService : Service() {
 
             outputUri = null
             stopForeground(STOP_FOREGROUND_REMOVE)
+            broadcastRecordingState(ACTION_RECORDING_STOPPED)
             stopSelf()
         }
     }
