@@ -13,18 +13,18 @@ I wanted a sidebar that could bring those essentials back without needing root a
 See Sidebar in action!
 
 <p align="center">
-  <img src="screenshots/vid.gif" width="100%" alt="Android Sidebar demo">
+  <img src="screenshots/vid.gif" width="320" alt="Android Sidebar demo">
 </p>
 
 ## 📸 Screenshots
 
 | Dashboard | Floating Sidebar | App Shortcuts |
 |:---:|:---:|:---:|
-| <img src="screenshots/1.jpeg" width="220" alt="Dashboard"> | <img src="screenshots/2.jpeg" width="220" alt="Floating sidebar"> | <img src="screenshots/3.jpeg" width="220" alt="App shortcuts"> |
+| <img src="screenshots/1.jpeg" width="280" alt="Dashboard"> | <img src="screenshots/2.jpeg" width="280" alt="Floating sidebar"> | <img src="screenshots/3.jpeg" width="280" alt="App shortcuts"> |
 
 | Screenshot Delay | Recording Audio |
 |:---:|:---:|
-| <img src="screenshots/5.jpeg" width="220" alt="Screenshot delay settings"> | <img src="screenshots/5.jpeg" width="220" alt="Recording audio settings"> |
+| <img src="screenshots/5.jpeg" width="280" alt="Screenshot delay settings"> | <img src="screenshots/5.jpeg" width="280" alt="Recording audio settings"> |
 ## ✨ Features
 
 - **Floating sidebar:** Your controls, always a tap away.
