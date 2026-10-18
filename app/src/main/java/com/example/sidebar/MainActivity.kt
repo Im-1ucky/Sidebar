@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private var screenshotFolderUri by mutableStateOf<String?>(null)
+    private var recordingFolderUri by mutableStateOf<String?>(null)
     private var captureDelaySeconds by mutableIntStateOf(0)
 
     private val overlayPermissionLauncher =
@@ -93,7 +94,6 @@ class MainActivity : ComponentActivity() {
                         startService(serviceIntent)
                     }
 
-                    // Return to the app that was underneath the sidebar.
                     moveTaskToBack(true)
                 } catch (exception: Exception) {
                     Log.e(TAG, "Unable to start screenshot service", exception)
@@ -104,7 +104,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-    private val folderPickerLauncher =
+    private val screenshotFolderPickerLauncher =
         registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
@@ -112,27 +112,56 @@ class MainActivity : ComponentActivity() {
             val uri = data?.data
 
             if (result.resultCode == RESULT_OK && uri != null) {
-                val grantedFlags = data.flags and (
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                                Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                        )
-
-                try {
-                    contentResolver.takePersistableUriPermission(
-                        uri,
-                        grantedFlags
-                    )
-
-                    screenshotFolderUri = uri.toString()
-
-                    preferences.edit()
-                        .putString(KEY_FOLDER_URI, screenshotFolderUri)
-                        .apply()
-                } catch (exception: Exception) {
-                    Log.e(TAG, "Couldn't save folder permission", exception)
-                }
+                persistFolderSelection(
+                    uri = uri,
+                    flags = data.flags,
+                    preferenceKey = KEY_FOLDER_URI,
+                    onSaved = { screenshotFolderUri = it }
+                )
             }
         }
+
+    private val recordingFolderPickerLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            val data = result.data
+            val uri = data?.data
+
+            if (result.resultCode == RESULT_OK && uri != null) {
+                persistFolderSelection(
+                    uri = uri,
+                    flags = data.flags,
+                    preferenceKey = KEY_RECORDING_FOLDER_URI,
+                    onSaved = { recordingFolderUri = it }
+                )
+            }
+        }
+
+    private fun persistFolderSelection(
+        uri: Uri,
+        flags: Int,
+        preferenceKey: String,
+        onSaved: (String) -> Unit
+    ) {
+        val grantedFlags = flags and (
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+
+        try {
+            contentResolver.takePersistableUriPermission(uri, grantedFlags)
+
+            val uriString = uri.toString()
+            preferences.edit()
+                .putString(preferenceKey, uriString)
+                .apply()
+
+            onSaved(uriString)
+        } catch (exception: Exception) {
+            Log.e(TAG, "Couldn't save folder permission for $uri", exception)
+        }
+    }
 
     private val serviceReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -140,7 +169,8 @@ class MainActivity : ComponentActivity() {
                 SidebarService.ACTION_STARTED -> {
                     Log.i(TAG, "Start acknowledged")
 
-                    if (pendingOperation == ServiceOperation.START ||
+                    if (
+                        pendingOperation == ServiceOperation.START ||
                         pendingOperation == ServiceOperation.RESTART
                     ) {
                         pendingOperation = null
@@ -177,6 +207,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         screenshotFolderUri = preferences.getString(KEY_FOLDER_URI, null)
+        recordingFolderUri =
+            preferences.getString(KEY_RECORDING_FOLDER_URI, null)
         captureDelaySeconds = preferences.getInt(KEY_CAPTURE_DELAY, 0)
 
         enableEdgeToEdge()
@@ -197,6 +229,12 @@ class MainActivity : ComponentActivity() {
                         } else {
                             "Custom folder selected"
                         },
+                    recordingFolderLabel =
+                        if (recordingFolderUri == null) {
+                            "Pictures/Sidebar (default)"
+                        } else {
+                            "Custom folder selected"
+                        },
                     captureDelaySeconds = captureDelaySeconds,
                     onCaptureDelayChanged = { seconds ->
                         captureDelaySeconds = seconds
@@ -205,13 +243,30 @@ class MainActivity : ComponentActivity() {
                             .apply()
                     },
                     onChooseScreenshotFolder = {
-                        folderPickerLauncher.launch(
+                        screenshotFolderPickerLauncher.launch(
                             Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
                         )
                     },
                     onResetScreenshotFolder = {
+                        screenshotFolderUri?.let { savedUri ->
+                            runCatching {
+                                contentResolver.releasePersistableUriPermission(
+                                    Uri.parse(savedUri),
+                                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                                )
+                            }
+                        }
+
                         screenshotFolderUri = null
-                        preferences.edit().remove(KEY_FOLDER_URI).apply()
+                        preferences.edit()
+                            .remove(KEY_FOLDER_URI)
+                            .apply()
+                    },
+                    onChooseRecordingFolder = {
+                        recordingFolderPickerLauncher.launch(
+                            Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                        )
                     },
                     onStart = {
                         if (pendingOperation == null) {
@@ -315,6 +370,7 @@ class MainActivity : ComponentActivity() {
         private const val TAG = "MainActivity"
         private const val PREFS_NAME = "sidebar_preferences"
         private const val KEY_FOLDER_URI = "screenshot_folder_uri"
+        private const val KEY_RECORDING_FOLDER_URI = "recording_folder_uri"
         private const val KEY_CAPTURE_DELAY = "screenshot_delay_seconds"
     }
 }

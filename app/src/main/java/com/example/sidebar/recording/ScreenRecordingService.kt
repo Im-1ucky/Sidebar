@@ -1,6 +1,7 @@
 
 package com.example.sidebar.recording
 
+import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -18,6 +19,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
 import android.view.WindowManager
@@ -51,12 +53,15 @@ class ScreenRecordingService : Service() {
         private const val TAG = "ScreenRecording"
         private const val CHANNEL_ID = "sidebar_recording"
         private const val NOTIFICATION_ID = 2002
+        private const val PREFS_NAME = "sidebar_preferences"
+        private const val KEY_RECORDING_FOLDER_URI = "recording_folder_uri"
     }
 
     private var projection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var recorder: MediaRecorder? = null
     private var outputUri: Uri? = null
+    private var outputIsMediaStore = false
     private var isRecording = false
     private var isPaused = false
     private var isFinishing = false
@@ -103,7 +108,7 @@ class ScreenRecordingService : Service() {
                 intent.getParcelableExtra(EXTRA_RESULT_DATA)
             }
 
-        if (resultCode != android.app.Activity.RESULT_OK || resultData == null) {
+        if (resultCode != Activity.RESULT_OK || resultData == null) {
             broadcastRecordingState(ACTION_RECORDING_FAILED)
             stopSelf()
             return
@@ -136,6 +141,7 @@ class ScreenRecordingService : Service() {
             )
 
             prepareRecorder()
+
             if (isRecording) {
                 broadcastRecordingState(ACTION_RECORDING_READY)
             }
@@ -161,25 +167,68 @@ class ScreenRecordingService : Service() {
             Locale.US
         ).format(Date())
 
-        val values = ContentValues().apply {
-            put(MediaStore.Video.Media.DISPLAY_NAME, "Sidebar_$timestamp.mp4")
-            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Sidebar")
+        val fileName = "Sidebar_$timestamp.mp4"
+        val customFolderUri = getSharedPreferences(
+            PREFS_NAME,
+            Context.MODE_PRIVATE
+        ).getString(KEY_RECORDING_FOLDER_URI, null)
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Video.Media.IS_PENDING, 1)
+        val descriptor: android.os.ParcelFileDescriptor
+
+        if (customFolderUri != null) {
+            val treeUri = Uri.parse(customFolderUri)
+
+            val parentDocumentUri = DocumentsContract.buildDocumentUriUsingTree(
+                treeUri,
+                DocumentsContract.getTreeDocumentId(treeUri)
+            )
+
+            val createdUri = DocumentsContract.createDocument(
+                contentResolver,
+                parentDocumentUri,
+                "video/mp4",
+                fileName
+            ) ?: error("Could not create video in the selected folder")
+
+            outputUri = createdUri
+            outputIsMediaStore = false
+
+            descriptor = try {
+                contentResolver.openFileDescriptor(createdUri, "w")
+                    ?: error("Could not open the video in the selected folder")
+            } catch (exception: Exception) {
+                contentResolver.delete(createdUri, null, null)
+                outputUri = null
+                throw exception
+            }
+        } else {
+            val values = ContentValues().apply {
+                put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                put(MediaStore.Video.Media.RELATIVE_PATH, "Pictures/Sidebar")
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Video.Media.IS_PENDING, 1)
+                }
+            }
+
+            val createdUri = contentResolver.insert(
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                values
+            ) ?: error("Could not create output video")
+
+            outputUri = createdUri
+            outputIsMediaStore = true
+
+            descriptor = try {
+                contentResolver.openFileDescriptor(createdUri, "w")
+                    ?: error("Could not open output video")
+            } catch (exception: Exception) {
+                contentResolver.delete(createdUri, null, null)
+                outputUri = null
+                throw exception
             }
         }
-
-        outputUri = contentResolver.insert(
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-            values
-        ) ?: error("Could not create output video")
-
-        val descriptor = contentResolver.openFileDescriptor(
-            outputUri!!,
-            "w"
-        ) ?: error("Could not open output video")
 
         try {
             val mediaRecorder =
@@ -225,6 +274,12 @@ class ScreenRecordingService : Service() {
 
             mediaRecorder.start()
             isRecording = true
+        } catch (exception: Exception) {
+            outputUri?.let { uri ->
+                runCatching { contentResolver.delete(uri, null, null) }
+            }
+            outputUri = null
+            throw exception
         } finally {
             descriptor.close()
         }
@@ -292,15 +347,24 @@ class ScreenRecordingService : Service() {
             }
 
             outputUri?.let { uri ->
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                if (
+                    outputIsMediaStore &&
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                ) {
                     val values = ContentValues().apply {
                         put(MediaStore.Video.Media.IS_PENDING, 0)
                     }
-                    contentResolver.update(uri, values, null, null)
+
+                    runCatching {
+                        contentResolver.update(uri, values, null, null)
+                    }.onFailure {
+                        Log.e(TAG, "Could not finalize saved video", it)
+                    }
                 }
             }
 
             outputUri = null
+            outputIsMediaStore = false
             stopForeground(STOP_FOREGROUND_REMOVE)
             broadcastRecordingState(ACTION_RECORDING_STOPPED)
             stopSelf()

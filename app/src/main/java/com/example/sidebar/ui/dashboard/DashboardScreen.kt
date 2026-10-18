@@ -33,10 +33,12 @@ import androidx.compose.ui.unit.dp
 fun DashboardScreen(
     state: DashboardUiState,
     screenshotFolderLabel: String,
+    recordingFolderLabel: String,
     captureDelaySeconds: Int,
     onCaptureDelayChanged: (Int) -> Unit,
     onChooseScreenshotFolder: () -> Unit,
     onResetScreenshotFolder: () -> Unit,
+    onChooseRecordingFolder: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onRestart: () -> Unit
@@ -209,8 +211,7 @@ fun DashboardScreen(
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(0, 3, 5).forEach { seconds ->
-                            val label =
-                                if (seconds == 0) "Instant" else "${seconds}s"
+                            val label = if (seconds == 0) "Instant" else "${seconds}s"
 
                             if (captureDelaySeconds == seconds) {
                                 Button(
@@ -258,13 +259,47 @@ fun DashboardScreen(
             }
 
             Text(
-                text = "Quick actions",
+                text = "Screen recording settings",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold
             )
 
-            Spacer(Modifier.height(12.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Save recordings to",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    Text(
+                        text = recordingFolderLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Button(
+                        onClick = onChooseRecordingFolder,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Choose folder")
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
         }
     }
 }
-
