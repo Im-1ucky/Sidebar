@@ -1,4 +1,3 @@
-
 package com.example.sidebar.screenshot
 
 import android.app.Notification
@@ -10,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
@@ -22,20 +22,21 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
+import android.view.Gravity
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.Toast
 import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
-import android.graphics.Color
-import android.view.Gravity
-import android.view.View
-import android.widget.FrameLayout
+import java.util.concurrent.atomic.AtomicLong
 
 class ScreenshotCaptureService : Service() {
 
@@ -44,8 +45,15 @@ class ScreenshotCaptureService : Service() {
     private var imageReader: ImageReader? = null
     private var workerThread: HandlerThread? = null
     private var workerHandler: Handler? = null
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private val finished = AtomicBoolean(false)
+    private val captureRequested = AtomicBoolean(false)
+    private val captureRequestedAtMs = AtomicLong(0L)
+    private val captureTapAtMs = AtomicLong(0L)
+
+    // PNG compression and storage writing happen on this separate thread.
+    private val saveExecutor = Executors.newSingleThreadExecutor()
 
     private var folderUri: Uri? = null
     private var projectionCallback: MediaProjection.Callback? = null
@@ -57,8 +65,11 @@ class ScreenshotCaptureService : Service() {
         flags: Int,
         startId: Int
     ): Int {
+        Log.i(TAG, "onStartCommand: action=${intent?.action}")
+
         when (intent?.action) {
             ACTION_STOP_SESSION -> {
+                Log.i(TAG, "Stopping screenshot session")
                 finishCapture()
                 return START_NOT_STICKY
             }
@@ -75,6 +86,13 @@ class ScreenshotCaptureService : Service() {
                     0
                 ).coerceIn(0, 5)
 
+                captureTapAtMs.set(SystemClock.elapsedRealtime())
+
+                Log.i(
+                    TAG,
+                    "Capture tapped; configured delay=${delaySeconds}s"
+                )
+
                 requestCapture(delaySeconds)
                 return START_NOT_STICKY
             }
@@ -86,6 +104,7 @@ class ScreenshotCaptureService : Service() {
         }
 
         if (intent == null) {
+            Log.w(TAG, "Service started with null intent")
             stopSelf(startId)
             return START_NOT_STICKY
         }
@@ -104,6 +123,7 @@ class ScreenshotCaptureService : Service() {
             }
 
         if (resultCode != RESULT_OK_VALUE || resultData == null) {
+            Log.e(TAG, "Missing or invalid screen capture permission data")
             stopSelf(startId)
             return START_NOT_STICKY
         }
@@ -159,6 +179,7 @@ class ScreenshotCaptureService : Service() {
                 workerHandler
             )
 
+            Log.i(TAG, "Initializing screenshot capture session")
             initializeCaptureSession(delaySeconds)
 
         } catch (exception: Exception) {
@@ -176,6 +197,8 @@ class ScreenshotCaptureService : Service() {
     }
 
     private fun initializeCaptureSession(initialDelaySeconds: Int) {
+        val initStart = SystemClock.elapsedRealtime()
+
         val windowManager =
             getSystemService(WINDOW_SERVICE) as WindowManager
 
@@ -187,6 +210,8 @@ class ScreenshotCaptureService : Service() {
         require(width > 0 && height > 0) {
             "Invalid screen dimensions"
         }
+
+        Log.i(TAG, "Screen dimensions: ${width}x${height}, density=$density")
 
         val reader = ImageReader.newInstance(
             width,
@@ -209,11 +234,23 @@ class ScreenshotCaptureService : Service() {
                     return@setOnImageAvailableListener
                 }
 
+                val frameTime = SystemClock.elapsedRealtime()
+                val tapTime = captureTapAtMs.get()
+                val armedTime = captureRequestedAtMs.get()
+
+                Log.i(
+                    TAG,
+                    "CAPTURE_FRAME: " +
+                            "tapToFrame=${if (tapTime > 0L) frameTime - tapTime else -1L}ms, " +
+                            "armedToFrame=${if (armedTime > 0L) frameTime - armedTime else -1L}ms"
+                )
+
+                val bitmapStart = SystemClock.elapsedRealtime()
+
                 val plane = image.planes[0]
                 val pixelStride = plane.pixelStride
                 val rowStride = plane.rowStride
-                val rowPadding =
-                    rowStride - pixelStride * width
+                val rowPadding = rowStride - pixelStride * width
 
                 val paddedBitmap = Bitmap.createBitmap(
                     width + rowPadding / pixelStride,
@@ -233,19 +270,67 @@ class ScreenshotCaptureService : Service() {
 
                 paddedBitmap.recycle()
 
-                val saved = saveBitmap(bitmap)
-                bitmap.recycle()
+                Log.i(
+                    TAG,
+                    "BITMAP_READY: processing=" +
+                            "${SystemClock.elapsedRealtime() - bitmapStart}ms"
+                )
 
-                if (saved) {
-                    showToast("Screenshot saved")
-                    showFlash()
-                } else {
-                    showToast("Couldn't save screenshot")
+                // Give immediate visual feedback before PNG compression.
+                showFlash()
+
+                val saveTapTime = tapTime
+                val saveFrameTime = frameTime
+
+                // The capture thread is now free to receive future frames.
+                // Only the save worker compresses and writes the PNG.
+                saveExecutor.execute {
+                    val saveStart = SystemClock.elapsedRealtime()
+
+                    try {
+                        Log.i(TAG, "SAVE_START: customFolder=${folderUri != null}")
+
+                        val saved = saveBitmap(bitmap)
+
+                        val saveDuration =
+                            SystemClock.elapsedRealtime() - saveStart
+
+                        val totalDuration =
+                            if (saveTapTime > 0L) {
+                                SystemClock.elapsedRealtime() - saveTapTime
+                            } else {
+                                -1L
+                            }
+
+                        Log.i(
+                            TAG,
+                            "SAVE_COMPLETE: saved=$saved, " +
+                                    "saveDuration=${saveDuration}ms, " +
+                                    "totalTapToSave=${totalDuration}ms"
+                        )
+
+                        if (saved) {
+                            showToast("Screenshot saved")
+                        } else {
+                            showToast("Couldn't save screenshot")
+                        }
+                    } catch (exception: Exception) {
+                        Log.e(TAG, "Background screenshot save failed", exception)
+                        showToast("Couldn't save screenshot")
+                    } finally {
+                        bitmap.recycle()
+                    }
                 }
 
+                Log.i(
+                    TAG,
+                    "SAVE_QUEUED: frameToQueue=" +
+                            "${SystemClock.elapsedRealtime() - saveFrameTime}ms"
+                )
+
             } catch (exception: Exception) {
-                Log.e(TAG, "Failed to save screenshot", exception)
-                showToast("Couldn't save screenshot")
+                Log.e(TAG, "Failed to process screenshot frame", exception)
+                showToast("Couldn't capture screenshot")
             } finally {
                 image.close()
             }
@@ -262,40 +347,63 @@ class ScreenshotCaptureService : Service() {
             workerHandler
         ) ?: error("Could not create virtual display")
 
+        Log.i(
+            TAG,
+            "VIRTUAL_DISPLAY_READY: initialization=" +
+                    "${SystemClock.elapsedRealtime() - initStart}ms"
+        )
+
         sendBroadcast(
             Intent(ACTION_SESSION_READY).setPackage(packageName)
         )
 
-        requestCapture(initialDelaySeconds)
-
         Log.i(TAG, "Screenshot session ready")
+
+        // Preserve the existing initial capture behavior.
+        requestCapture(initialDelaySeconds)
     }
 
-    private val captureRequested = AtomicBoolean(false)
-
     private fun requestCapture(delaySeconds: Int) {
-        if (finished.get()) return
+        if (finished.get()) {
+            Log.w(TAG, "Ignoring capture request: session finished")
+            return
+        }
+
+        Log.i(TAG, "Scheduling capture after ${delaySeconds}s + 400ms")
 
         mainHandler.postDelayed({
-            if (finished.get()) return@postDelayed
+            if (finished.get()) {
+                Log.w(TAG, "Capture cancelled: session finished")
+                return@postDelayed
+            }
 
             if (!captureRequested.compareAndSet(false, true)) {
                 Log.w(TAG, "A screenshot is already waiting to be captured")
             } else {
-                Log.i(TAG, "Screenshot requested")
+                captureRequestedAtMs.set(SystemClock.elapsedRealtime())
+
+                Log.i(
+                    TAG,
+                    "SCREENSHOT_ARMED: elapsedRealtime=" +
+                            "${captureRequestedAtMs.get()}ms"
+                )
             }
         }, delaySeconds * 1000L + 400L)
     }
 
     private fun saveBitmap(bitmap: Bitmap): Boolean {
+        val saveStart = SystemClock.elapsedRealtime()
+
         val timestamp = SimpleDateFormat(
             "yyyyMMdd_HHmmss_SSS",
             Locale.US
         ).format(Date())
 
-        val filename = "Screenshot_$timestamp.png"
+        val filename = "Screenshot_$timestamp.jpg"
 
         return try {
+            Log.i(TAG, "Creating JPEG: $filename")
+
             val output = folderUri?.let { treeUri ->
                 val documentId =
                     DocumentsContract.getTreeDocumentId(treeUri)
@@ -309,7 +417,7 @@ class ScreenshotCaptureService : Service() {
                 val newFile = DocumentsContract.createDocument(
                     contentResolver,
                     treeDocumentUri,
-                    "image/png",
+                    "image/jpeg",
                     filename
                 )
 
@@ -318,13 +426,50 @@ class ScreenshotCaptureService : Service() {
                 }
             } ?: openMediaStoreOutput(filename)
 
-            if (output == null) return false
+            if (output == null) {
+                Log.e(TAG, "SAVE_FAILED: output stream is null")
+                return false
+            }
 
-            output.use { stream ->
-                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)) {
-                    return false
+            var compressed = false
+
+            val compressionStart = SystemClock.elapsedRealtime()
+
+            try {
+                compressed = bitmap.compress(
+                    Bitmap.CompressFormat.JPEG,
+                    80,
+                    output
+                )
+            } finally {
+                Log.i(
+                    TAG,
+                    "JPEG_COMPRESS_ONLY: " +
+                            "${SystemClock.elapsedRealtime() - compressionStart}ms"
+                )
+
+                val closeStart = SystemClock.elapsedRealtime()
+
+                try {
+                    output.close()
+                } finally {
+                    Log.i(
+                        TAG,
+                        "OUTPUT_CLOSE_AND_FINALIZE: " +
+                                "${SystemClock.elapsedRealtime() - closeStart}ms"
+                    )
                 }
             }
+
+            if (!compressed) {
+                Log.e(TAG, "SAVE_FAILED: PNG compression returned false")
+                return false
+            }
+
+            Log.i(
+                TAG,
+                "SAVE_SUCCESS: total=${SystemClock.elapsedRealtime() - saveStart}ms"
+            )
 
             true
         } catch (exception: Exception) {
@@ -336,7 +481,7 @@ class ScreenshotCaptureService : Service() {
     private fun openMediaStoreOutput(filename: String): OutputStream? {
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, filename)
-            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
             put(
                 MediaStore.Images.Media.RELATIVE_PATH,
                 "Pictures/Sidebar"
@@ -368,7 +513,6 @@ class ScreenshotCaptureService : Service() {
             }
         }
     }
-
 
     private fun showFlash() {
         mainHandler.post {
@@ -404,7 +548,11 @@ class ScreenshotCaptureService : Service() {
                                 windowManager.removeView(flashView)
                             }
                         } catch (exception: Exception) {
-                            Log.w(TAG, "Couldn't remove screenshot flash", exception)
+                            Log.w(
+                                TAG,
+                                "Couldn't remove screenshot flash",
+                                exception
+                            )
                         }
                     }
                     .start()
@@ -413,7 +561,6 @@ class ScreenshotCaptureService : Service() {
             }
         }
     }
-
 
     private fun showToast(message: String) {
         mainHandler.post {
@@ -427,6 +574,8 @@ class ScreenshotCaptureService : Service() {
 
     private fun finishCapture() {
         if (!finished.compareAndSet(false, true)) return
+
+        Log.i(TAG, "Cleaning up screenshot session")
 
         try {
             virtualDisplay?.release()
@@ -467,6 +616,8 @@ class ScreenshotCaptureService : Service() {
     }
 
     override fun onDestroy() {
+        Log.i(TAG, "Screenshot service destroyed")
+
         finished.set(true)
 
         try {
@@ -489,6 +640,8 @@ class ScreenshotCaptureService : Service() {
 
         workerThread?.quitSafely()
         workerThread = null
+
+        saveExecutor.shutdown()
 
         super.onDestroy()
     }
@@ -525,11 +678,15 @@ class ScreenshotCaptureService : Service() {
         const val EXTRA_RESULT_DATA = "projection_result_data"
         const val EXTRA_FOLDER_URI = "screenshot_folder_uri"
         const val EXTRA_DELAY_SECONDS = "screenshot_delay_seconds"
+
         const val ACTION_SCREENSHOT_SAVED =
             "com.example.sidebar.SCREENSHOT_SAVED"
 
-        const val ACTION_CAPTURE = "com.example.sidebar.SCREENSHOT_CAPTURE"
-        const val ACTION_STOP_SESSION = "com.example.sidebar.SCREENSHOT_STOP_SESSION"
+        const val ACTION_CAPTURE =
+            "com.example.sidebar.SCREENSHOT_CAPTURE"
+
+        const val ACTION_STOP_SESSION =
+            "com.example.sidebar.SCREENSHOT_STOP_SESSION"
 
         const val ACTION_SESSION_READY =
             "com.example.sidebar.SCREENSHOT_SESSION_READY"

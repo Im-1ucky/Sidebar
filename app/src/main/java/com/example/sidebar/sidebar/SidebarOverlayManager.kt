@@ -420,6 +420,99 @@ class SidebarOverlayManager(
         }
     }
 
+    private fun createDragHandle(
+        pill: View,
+        params: WindowManager.LayoutParams
+    ): View {
+        val handle = LinearLayout(appContext).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            contentDescription = "Drag to move pill"
+
+            repeat(3) {
+                val row = LinearLayout(appContext).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER
+                }
+
+                repeat(2) {
+                    val dot = View(appContext).apply {
+                        background = GradientDrawable().apply {
+                            shape = GradientDrawable.OVAL
+                            setColor(Color.LTGRAY)
+                        }
+                    }
+
+                    row.addView(
+                        dot,
+                        LinearLayout.LayoutParams(dp(3), dp(3)).apply {
+                            setMargins(dp(2), dp(2), dp(2), dp(2))
+                        }
+                    )
+                }
+
+                addView(
+                    row,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                )
+            }
+        }
+
+        var downX = 0f
+        var downY = 0f
+        var startX = 0
+        var startY = 0
+
+        handle.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.rawX
+                    downY = event.rawY
+                    startX = params.x
+                    startY = params.y
+                    true
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    params.x = (
+                            startX + (event.rawX - downX).roundToInt()
+                            ).coerceIn(
+                            0,
+                            (screenWidth() - params.width).coerceAtLeast(0)
+                        )
+
+                    params.y = (
+                            startY + (event.rawY - downY).roundToInt()
+                            ).coerceIn(
+                            0,
+                            (screenHeight() - params.height).coerceAtLeast(0)
+                        )
+
+                    try {
+                        if (pill.isAttachedToWindow) {
+                            windowManager.updateViewLayout(pill, params)
+                        }
+                    } catch (exception: Exception) {
+                        Log.e(TAG, "Unable to move pill", exception)
+                    }
+
+                    true
+                }
+
+                MotionEvent.ACTION_UP,
+                MotionEvent.ACTION_CANCEL -> true
+
+                else -> false
+            }
+        }
+
+        return handle
+    }
+
     private fun showScreenshotPill() {
         if (screenshotPill != null) return
         if (!Settings.canDrawOverlays(appContext)) return
@@ -493,16 +586,22 @@ class SidebarOverlayManager(
         )
 
         val params = WindowManager.LayoutParams(
-            dp(116),
+            dp(148),
             dp(60),
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            gravity = Gravity.TOP or Gravity.LEFT
+            x = ((screenWidth() - width) / 2).coerceAtLeast(0)
             y = dp(100)
         }
+
+        pill.addView(
+            createDragHandle(pill, params),
+            LinearLayout.LayoutParams(dp(32), dp(48))
+        )
 
         try {
             windowManager.addView(pill, params)
@@ -621,16 +720,22 @@ class SidebarOverlayManager(
         )
 
         val params = WindowManager.LayoutParams(
-            dp(176),
+            dp(208),
             dp(60),
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            gravity = Gravity.TOP or Gravity.LEFT
+            x = ((screenWidth() - width) / 2).coerceAtLeast(0)
             y = dp(100)
         }
+
+        pill.addView(
+            createDragHandle(pill, params),
+            LinearLayout.LayoutParams(dp(32), dp(48))
+        )
 
         try {
             windowManager.addView(pill, params)
