@@ -485,34 +485,41 @@ class SidebarOverlayView(
         )
     }
 
-
-
-
-
     private fun renderAppPicker() {
+        // Keep the header and scrolling list in a dedicated vertical container.
+        val content = LinearLayout(context).apply {
+            orientation = VERTICAL
+            gravity = Gravity.TOP
+            setBackgroundColor(Color.TRANSPARENT)
+            clipChildren = true
+            clipToPadding = true
+        }
+
         val header = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(Color.TRANSPARENT)
-        }
-
-        val back = TextView(context).apply {
-            text = "‹"
-            textSize = 30f
-            setTextColor(foregroundColor)
-            gravity = Gravity.CENTER
-            includeFontPadding = false
-            contentDescription = "Back"
             isClickable = true
             isFocusable = true
-
+            contentDescription = "Back from app picker"
             setOnClickListener {
                 showingAppPicker = false
                 render()
             }
         }
 
-        header.addView(back, LayoutParams(dp(36), dp(44)))
+        val back = TextView(context).apply {
+            text = "‹"
+            textSize = 28f
+            setTextColor(foregroundColor)
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+        }
+
+        header.addView(
+            back,
+            LayoutParams(dp(32), dp(44))
+        )
 
         val title = TextView(context).apply {
             text = "ADD APPS"
@@ -521,18 +528,28 @@ class SidebarOverlayView(
             setTextColor(foregroundColor)
             gravity = Gravity.CENTER_VERTICAL
             includeFontPadding = false
+
+            // Optical alignment with the back arrow.
+            translationY = dp(2).toFloat()
         }
 
-        header.addView(title, LayoutParams(0, dp(44), 1f))
-
-        // Reuse the root card background; do not create another card.
-        addView(
-            header,
-            LayoutParams(LayoutParams.MATCH_PARENT, dp(44))
+        header.addView(
+            title,
+            LayoutParams(
+                LayoutParams.WRAP_CONTENT,
+                dp(44)
+            )
         )
 
-        header.bringToFront()
+        content.addView(
+            header,
+            LayoutParams(
+                LayoutParams.MATCH_PARENT,
+                dp(44)
+            )
+        )
 
+        // App rows are clipped to the scrollable region below the header.
         val list = LinearLayout(context).apply {
             orientation = VERTICAL
             setPadding(0, 0, 0, 0)
@@ -583,14 +600,24 @@ class SidebarOverlayView(
             )
         }
 
-// Keep the header above the scrolling area.
-        addView(
+        content.addView(
             scroll,
-            LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
+            LayoutParams(
+                LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        // The dedicated container occupies the available sidebar content area.
+        addView(
+            content,
+            LayoutParams(
+                LayoutParams.MATCH_PARENT,
+                LayoutParams.MATCH_PARENT
+            )
         )
     }
-
-
 
     private fun addStatusText(
         container: LinearLayout,
@@ -725,6 +752,7 @@ class SidebarOverlayView(
             setTextColor(foregroundColor)
             gravity = Gravity.CENTER_VERTICAL
             includeFontPadding = false
+            translationY = dp(2).toFloat()
         }
 
         header.addView(
@@ -811,6 +839,7 @@ class SidebarOverlayView(
             setTextColor(foregroundColor)
             gravity = Gravity.CENTER_VERTICAL
             includeFontPadding = false
+            translationY = dp(2).toFloat()
         }
 
         header.addView(
