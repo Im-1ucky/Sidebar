@@ -1,6 +1,8 @@
+
 package com.example.sidebar.ui.dashboard
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,13 +20,16 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.sidebar.recording.RecordingAudioMode
@@ -45,6 +50,10 @@ fun DashboardScreen(
     onRestart: () -> Unit,
     recordingAudioMode: RecordingAudioMode,
     onRecordingAudioModeChanged: (RecordingAudioMode) -> Unit,
+    overlayPermissionGranted: Boolean,
+    notificationsPermissionGranted: Boolean,
+    onOpenOverlaySettings: () -> Unit,
+    onOpenNotificationSettings: () -> Unit
 ) {
     val busy = state.operation != null
 
@@ -79,9 +88,11 @@ fun DashboardScreen(
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(
+                            modifier = Modifier.weight(1f),
                             verticalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
                             Text(
@@ -184,6 +195,49 @@ fun DashboardScreen(
                             }
                         }
                     }
+                }
+            }
+
+            // Persistent permissions only
+            Text(
+                text = "Permissions & Access",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    PermissionRow(
+                        title = "Display over other apps",
+                        category = "Necessary",
+                        description = "Required for the floating sidebar.",
+                        enabled = overlayPermissionGranted,
+                        onClick = onOpenOverlaySettings
+                    )
+
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+
+                    PermissionRow(
+                        title = "Notifications",
+                        category = "Optional",
+                        description = "Used for service notifications.",
+                        enabled = notificationsPermissionGranted,
+                        onClick = onOpenNotificationSettings
+                    )
                 }
             }
 
@@ -323,7 +377,6 @@ fun DashboardScreen(
                                     },
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    // The selected button background indicates selection.
                                     Text(label)
                                 }
                             } else {
@@ -369,6 +422,67 @@ fun DashboardScreen(
             }
 
             Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+@Composable
+private fun PermissionRow(
+    title: String,
+    category: String,
+    description: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                role = Role.Button,
+                onClick = onClick
+            )
+            .padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Text(
+                text = "$category · $description",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = if (enabled) "Enabled" else "Not enabled",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                }
+            )
+
+            Text(
+                text = "Manage ›",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

@@ -1,3 +1,4 @@
+
 package com.example.sidebar
 
 import android.content.BroadcastReceiver
@@ -49,16 +50,21 @@ class MainActivity : ComponentActivity() {
         RecordingAudioMode.MICROPHONE
     )
 
+    private var overlayPermissionGranted by mutableStateOf(false)
+    private var notificationsPermissionGranted by mutableStateOf(false)
+
     private val overlayPermissionLauncher =
         registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) {
+            refreshPermissionStates()
+
             if (Settings.canDrawOverlays(this)) {
                 if (waitingForOverlayPermission) {
                     waitingForOverlayPermission = false
                     SidebarService.start(this)
                 }
-            } else {
+            } else if (waitingForOverlayPermission) {
                 waitingForOverlayPermission = false
                 pendingOperation = null
                 dashboardViewModel.operationCompleted(running = false)
@@ -203,15 +209,12 @@ class MainActivity : ComponentActivity() {
 
         try {
             if (isDefaultFolder(uri)) {
-                // Clear a previously saved custom folder, if any.
                 val previousUri = preferences.getString(preferenceKey, null)
 
                 if (previousUri != null && previousUri != uri.toString()) {
                     releaseFolderPermission(previousUri)
                 }
 
-                // The picker may already have granted a temporary/persistable
-                // permission. Release it because the default uses MediaStore.
                 runCatching {
                     contentResolver.releasePersistableUriPermission(
                         uri,
@@ -236,7 +239,6 @@ class MainActivity : ComponentActivity() {
                 .putString(preferenceKey, uriString)
                 .apply()
 
-            // Release the old folder permission if the selection changed.
             if (previousUri != null && previousUri != uriString) {
                 releaseFolderPermission(previousUri)
             }
@@ -292,6 +294,35 @@ class MainActivity : ComponentActivity() {
         }.getOrDefault(RecordingAudioMode.MICROPHONE)
     }
 
+    /**
+     * Refreshes persistent permission indicators.
+     */
+    private fun refreshPermissionStates() {
+        overlayPermissionGranted = Settings.canDrawOverlays(this)
+
+        notificationsPermissionGranted =
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                    checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun openOverlaySettings() {
+        val permissionIntent = Intent(
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            Uri.parse("package:$packageName")
+        )
+
+        overlayPermissionLauncher.launch(permissionIntent)
+    }
+
+    private fun openNotificationSettings() {
+        val settingsIntent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        }
+
+        startActivity(settingsIntent)
+    }
+
     private val serviceReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -341,6 +372,8 @@ class MainActivity : ComponentActivity() {
         captureDelaySeconds = preferences.getInt(KEY_CAPTURE_DELAY, 0)
         recordingAudioMode = loadRecordingAudioMode()
 
+        refreshPermissionStates()
+
         enableEdgeToEdge()
 
         setContent {
@@ -355,13 +388,8 @@ class MainActivity : ComponentActivity() {
 
                 DashboardScreen(
                     state = state,
-
-                    screenshotFolderLabel =
-                        getFolderLabel(screenshotFolderUri),
-
-                    recordingFolderLabel =
-                        getFolderLabel(recordingFolderUri),
-
+                    screenshotFolderLabel = getFolderLabel(screenshotFolderUri),
+                    recordingFolderLabel = getFolderLabel(recordingFolderUri),
                     captureDelaySeconds = captureDelaySeconds,
 
                     onCaptureDelayChanged = { seconds ->
@@ -424,6 +452,17 @@ class MainActivity : ComponentActivity() {
                             dashboardViewModel.beginOperation(ServiceOperation.RESTART)
                             SidebarService.stop(this@MainActivity)
                         }
+                    },
+
+                    overlayPermissionGranted = overlayPermissionGranted,
+                    notificationsPermissionGranted = notificationsPermissionGranted,
+
+                    onOpenOverlaySettings = {
+                        openOverlaySettings()
+                    },
+
+                    onOpenNotificationSettings = {
+                        openNotificationSettings()
                     }
                 )
             }
@@ -436,7 +475,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+
         recordingAudioMode = loadRecordingAudioMode()
+        refreshPermissionStates()
     }
 
     override fun onNewIntent(intent: Intent) {
