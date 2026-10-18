@@ -1,8 +1,11 @@
+
 package com.example.sidebar.recording
 
+import android.Manifest
 import android.app.Activity
-import android.content.Intent
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -12,11 +15,30 @@ import androidx.activity.result.contract.ActivityResultContracts
 
 class RecordingConsentActivity : ComponentActivity() {
 
+    private val audioMode: RecordingAudioMode
+        get() = runCatching {
+            RecordingAudioMode.valueOf(
+                intent.getStringExtra(ScreenRecordingService.EXTRA_AUDIO_MODE)
+                    ?: RecordingAudioMode.MICROPHONE.name
+            )
+        }.getOrDefault(RecordingAudioMode.MICROPHONE)
+
+    private val microphonePermissionLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
+            if (granted) {
+                launchScreenCaptureConsent()
+            } else {
+                // Do not silently start a microphone recording without permission.
+                finish()
+            }
+        }
+
     private val consentLauncher =
         registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
-
             if (
                 result.resultCode == Activity.RESULT_OK &&
                 result.data != null
@@ -39,21 +61,41 @@ class RecordingConsentActivity : ComponentActivity() {
 
                     putExtra(
                         ScreenRecordingService.EXTRA_AUDIO_MODE,
-                        intent.getStringExtra(
-                            ScreenRecordingService.EXTRA_AUDIO_MODE
-                        ) ?: RecordingAudioMode.NONE.name
+                        audioMode.name
                     )
                 }
 
-                startForegroundService(serviceIntent)
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(serviceIntent)
+                    } else {
+                        startService(serviceIntent)
+                    }
+                } finally {
+                    finish()
+                }
+            } else {
+                finish()
             }
-
-            finish()
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        if (
+            audioMode == RecordingAudioMode.MICROPHONE &&
+            checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            microphonePermissionLauncher.launch(
+                Manifest.permission.RECORD_AUDIO
+            )
+        } else {
+            launchScreenCaptureConsent()
+        }
+    }
+
+    private fun launchScreenCaptureConsent() {
         val manager = getSystemService(
             Context.MEDIA_PROJECTION_SERVICE
         ) as MediaProjectionManager

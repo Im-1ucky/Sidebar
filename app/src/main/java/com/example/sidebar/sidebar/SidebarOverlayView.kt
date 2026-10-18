@@ -1,7 +1,6 @@
 
 package com.example.sidebar.sidebar
 
-import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -14,7 +13,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -22,6 +20,9 @@ import android.widget.TextView
 import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import com.example.sidebar.recording.RecordingAudioMode
+import android.widget.FrameLayout
+import com.example.sidebar.R
 
 class SidebarOverlayView(
     context: Context,
@@ -31,7 +32,7 @@ class SidebarOverlayView(
     private val onDragModeChanged: (Boolean) -> Unit,
     private val onSwipeInward: (Float) -> Unit,
     private val onScreenshot: () -> Unit,
-    private val onRecord: (com.example.sidebar.recording.RecordingAudioMode) -> Unit
+    private val onRecord: (RecordingAudioMode) -> Unit
 ) : LinearLayout(context) {
 
     var isExpanded = false
@@ -83,6 +84,7 @@ class SidebarOverlayView(
 
     private var showingAppPicker = false
     private var showingScreenshotDelayPicker = false
+    private var showingRecordingAudioPicker = false
 
     private val shortcutPrefs = context.getSharedPreferences(
         "sidebar_shortcuts",
@@ -96,13 +98,10 @@ class SidebarOverlayView(
 
     private companion object {
         const val KEY_CAPTURE_DELAY = "screenshot_delay_seconds"
+        const val KEY_RECORDING_AUDIO_MODE = "recording_audio_mode"
         const val TAG = "SidebarOverlayView"
     }
 
-    /**
-     * Runs only on the background executor.
-     * Package queries and app label/icon loading must not block the UI thread.
-     */
     private fun getLaunchableApps(): List<LaunchableApp> {
         val intent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
@@ -122,18 +121,18 @@ class SidebarOverlayView(
 
                 LaunchableApp(
                     packageName = packageName,
-                    name = resolveInfo.loadLabel(context.packageManager).toString(),
-                    icon = resolveInfo.loadIcon(context.packageManager)
+                    name = resolveInfo.loadLabel(
+                        context.packageManager
+                    ).toString(),
+                    icon = resolveInfo.loadIcon(
+                        context.packageManager
+                    )
                 )
             }
             .distinctBy { it.packageName }
             .sortedBy { it.name.lowercase() }
     }
 
-    /**
-     * Starts app discovery once. Results are cached and UI rendering
-     * is triggered on the main thread when discovery completes.
-     */
     private fun ensureLaunchableAppsLoaded() {
         if (launchableAppsCache != null || loadingLaunchableApps) {
             return
@@ -171,6 +170,19 @@ class SidebarOverlayView(
             .apply()
     }
 
+    private fun getSelectedRecordingAudioMode(): RecordingAudioMode {
+        val savedMode = settingsPrefs.getString(
+            KEY_RECORDING_AUDIO_MODE,
+            RecordingAudioMode.MICROPHONE.name
+        )
+
+        return runCatching {
+            RecordingAudioMode.valueOf(
+                savedMode ?: RecordingAudioMode.MICROPHONE.name
+            )
+        }.getOrDefault(RecordingAudioMode.MICROPHONE)
+    }
+
     init {
         clipChildren = false
         clipToPadding = false
@@ -189,7 +201,10 @@ class SidebarOverlayView(
                     longPressTriggered = false
 
                     handler.removeCallbacks(longPressRunnable)
-                    handler.postDelayed(longPressRunnable, longPressTimeout)
+                    handler.postDelayed(
+                        longPressRunnable,
+                        longPressTimeout
+                    )
                     true
                 }
 
@@ -205,7 +220,10 @@ class SidebarOverlayView(
                     }
 
                     if (dragMode) {
-                        if (abs(dx) > touchSlop || abs(dy) > touchSlop) {
+                        if (
+                            abs(dx) > touchSlop ||
+                            abs(dy) > touchSlop
+                        ) {
                             dragging = true
                         }
 
@@ -239,7 +257,9 @@ class SidebarOverlayView(
                             dragging = false
 
                             handle.layoutParams =
-                                handle.layoutParams.apply { width = dp(12) }
+                                handle.layoutParams.apply {
+                                    width = dp(12)
+                                }
 
                             onDragModeChanged(false)
                         }
@@ -270,7 +290,9 @@ class SidebarOverlayView(
 
                     if (!isExpanded) {
                         handle.layoutParams =
-                            handle.layoutParams.apply { width = dp(12) }
+                            handle.layoutParams.apply {
+                                width = dp(12)
+                            }
                         onDragModeChanged(false)
                     }
 
@@ -314,26 +336,35 @@ class SidebarOverlayView(
 
             addView(
                 handle,
-                LayoutParams(dp(if (dragMode) 20 else 12), dp(100))
+                LayoutParams(
+                    dp(if (dragMode) 20 else 12),
+                    dp(100)
+                )
             )
             return
         }
 
-        // Start app discovery without blocking rendering or touch events.
         ensureLaunchableAppsLoaded()
 
         orientation = VERTICAL
         gravity = Gravity.CENTER_HORIZONTAL
         background = roundedBackground(panelColor, 24)
 
-        if (showingScreenshotDelayPicker) {
-            renderScreenshotDelayPicker()
-            return
-        }
+        when {
+            showingScreenshotDelayPicker -> {
+                renderScreenshotDelayPicker()
+                return
+            }
 
-        if (showingAppPicker) {
-            renderAppPicker()
-            return
+            showingRecordingAudioPicker -> {
+                renderRecordingAudioPicker()
+                return
+            }
+
+            showingAppPicker -> {
+                renderAppPicker()
+                return
+            }
         }
 
         val actions = LinearLayout(context).apply {
@@ -343,7 +374,7 @@ class SidebarOverlayView(
 
         actions.addView(
             createIconButton(
-                iconRes = android.R.drawable.ic_menu_camera,
+                iconRes = R.drawable.ic_screenshot,
                 description = "Screenshot",
                 onLongClick = {
                     showingScreenshotDelayPicker = true
@@ -360,21 +391,24 @@ class SidebarOverlayView(
 
         actions.addView(
             createIconButton(
-                iconRes = android.R.drawable.presence_video_online,
+                iconRes = R.drawable.ic_screen_record,
                 description = "Screen recording",
                 onLongClick = {
                     showRecordingAudioPicker()
                 }
+
             ) {
+                val mode = getSelectedRecordingAudioMode()
                 changeExpanded(false)
-                onRecord(
-                    com.example.sidebar.recording.RecordingAudioMode.NONE
-                )
+                onRecord(mode)
             },
             LayoutParams(dp(54), dp(54))
         )
 
-        addView(actions, LayoutParams(LayoutParams.MATCH_PARENT, dp(58)))
+        addView(
+            actions,
+            LayoutParams(LayoutParams.MATCH_PARENT, dp(58))
+        )
 
         val heading = TextView(context).apply {
             text = "APP SHORTCUTS"
@@ -396,6 +430,7 @@ class SidebarOverlayView(
         val scrollView = ScrollView(context).apply {
             isFillViewport = false
             clipToPadding = false
+
             addView(
                 shortcutList,
                 ViewGroup.LayoutParams(
@@ -410,7 +445,8 @@ class SidebarOverlayView(
         if (launchableApps == null) {
             addStatusText(shortcutList, "Loading apps…")
         } else {
-            val appsByPackage = launchableApps.associateBy { it.packageName }
+            val appsByPackage =
+                launchableApps.associateBy { it.packageName }
 
             getSelectedPackages().forEach { packageName ->
                 val app = appsByPackage[packageName]
@@ -434,6 +470,8 @@ class SidebarOverlayView(
             background = roundedBackground(actionColor, 14)
 
             setOnClickListener {
+                showingScreenshotDelayPicker = false
+                showingRecordingAudioPicker = false
                 showingAppPicker = true
                 render()
             }
@@ -447,10 +485,15 @@ class SidebarOverlayView(
         )
     }
 
+
+
+
+
     private fun renderAppPicker() {
         val header = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(Color.TRANSPARENT)
         }
 
         val back = TextView(context).apply {
@@ -458,30 +501,44 @@ class SidebarOverlayView(
             textSize = 30f
             setTextColor(foregroundColor)
             gravity = Gravity.CENTER
+            includeFontPadding = false
+            contentDescription = "Back"
+            isClickable = true
+            isFocusable = true
+
             setOnClickListener {
                 showingAppPicker = false
                 render()
             }
         }
 
-        header.addView(back, LayoutParams(dp(36), dp(40)))
+        header.addView(back, LayoutParams(dp(36), dp(44)))
 
         val title = TextView(context).apply {
             text = "ADD APPS"
             textSize = 12f
             letterSpacing = 0.1f
             setTextColor(foregroundColor)
+            gravity = Gravity.CENTER_VERTICAL
+            includeFontPadding = false
         }
 
-        header.addView(
-            title,
-            LayoutParams(LayoutParams.WRAP_CONTENT, dp(40))
+        header.addView(title, LayoutParams(0, dp(44), 1f))
+
+        // Reuse the root card background; do not create another card.
+        addView(
+            header,
+            LayoutParams(LayoutParams.MATCH_PARENT, dp(44))
         )
 
-        addView(header, LayoutParams(LayoutParams.MATCH_PARENT, dp(40)))
+        header.bringToFront()
 
         val list = LinearLayout(context).apply {
             orientation = VERTICAL
+            setPadding(0, 0, 0, 0)
+            setBackgroundColor(Color.TRANSPARENT)
+            clipChildren = true
+            clipToPadding = true
         }
 
         val launchableApps = launchableAppsCache
@@ -493,8 +550,8 @@ class SidebarOverlayView(
 
             launchableApps.forEach { app ->
                 addAppRow(
-                    list,
-                    app,
+                    container = list,
+                    app = app,
                     selected = app.packageName in selectedPackages
                 ) {
                     val selected = getSelectedPackages().toMutableSet()
@@ -510,6 +567,13 @@ class SidebarOverlayView(
         }
 
         val scroll = ScrollView(context).apply {
+            isFillViewport = false
+            clipChildren = true
+            clipToPadding = true
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            setBackgroundColor(Color.TRANSPARENT)
+
             addView(
                 list,
                 ViewGroup.LayoutParams(
@@ -519,11 +583,14 @@ class SidebarOverlayView(
             )
         }
 
+// Keep the header above the scrolling area.
         addView(
             scroll,
             LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
         )
     }
+
+
 
     private fun addStatusText(
         container: LinearLayout,
@@ -559,6 +626,7 @@ class SidebarOverlayView(
 
             val icon = ImageView(context).apply {
                 setImageDrawable(app.icon)
+                scaleType = ImageView.ScaleType.FIT_CENTER
             }
 
             addView(icon, LayoutParams(dp(30), dp(30)))
@@ -567,25 +635,17 @@ class SidebarOverlayView(
                 text = app.name
                 textSize = 13f
                 setTextColor(foregroundColor)
+                gravity = Gravity.CENTER_VERTICAL
+                includeFontPadding = false
                 setPadding(dp(10), 0, 0, 0)
                 maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
             }
 
             addView(
                 name,
                 LayoutParams(0, LayoutParams.MATCH_PARENT, 1f)
             )
-
-            if (onSelect != null) {
-                val marker = TextView(context).apply {
-                    text = if (selected) "✓" else "+"
-                    textSize = 18f
-                    setTextColor(foregroundColor)
-                    gravity = Gravity.CENTER
-                }
-
-                addView(marker, LayoutParams(dp(24), dp(40)))
-            }
         }
 
         row.setOnClickListener {
@@ -643,28 +703,39 @@ class SidebarOverlayView(
             textSize = 30f
             setTextColor(foregroundColor)
             gravity = Gravity.CENTER
+            includeFontPadding = false
             contentDescription = "Back"
+
             setOnClickListener {
                 showingScreenshotDelayPicker = false
+                showingRecordingAudioPicker = false
                 render()
             }
         }
 
-        header.addView(back, LayoutParams(dp(36), dp(40)))
+        header.addView(
+            back,
+            LayoutParams(dp(36), dp(44))
+        )
 
         val title = TextView(context).apply {
             text = "SCREENSHOT DELAY"
             textSize = 12f
             letterSpacing = 0.1f
             setTextColor(foregroundColor)
+            gravity = Gravity.CENTER_VERTICAL
+            includeFontPadding = false
         }
 
         header.addView(
             title,
-            LayoutParams(LayoutParams.WRAP_CONTENT, dp(40))
+            LayoutParams(0, dp(44), 1f)
         )
 
-        addView(header, LayoutParams(LayoutParams.MATCH_PARENT, dp(40)))
+        addView(
+            header,
+            LayoutParams(LayoutParams.MATCH_PARENT, dp(44))
+        )
 
         val selectedDelay = settingsPrefs.getInt(KEY_CAPTURE_DELAY, 0)
 
@@ -674,7 +745,12 @@ class SidebarOverlayView(
             5 to "5 seconds"
         ).forEach { (seconds, label) ->
             val option = TextView(context).apply {
-                text = if (selectedDelay == seconds) "✓  $label" else label
+                text = if (selectedDelay == seconds) {
+                    "✓  $label"
+                } else {
+                    label
+                }
+
                 textSize = 14f
                 setTextColor(foregroundColor)
                 gravity = Gravity.CENTER_VERTICAL
@@ -702,33 +778,94 @@ class SidebarOverlayView(
         }
     }
 
-    private fun showRecordingAudioPicker() {
-        val dialog = AlertDialog.Builder(
-            context,
-            android.R.style.Theme_DeviceDefault_Dialog_Alert
-        )
-            .setTitle("Recording audio")
-            .setItems(
-                arrayOf("Microphone", "No audio")
-            ) { _, which ->
-                val mode =
-                    if (which == 0) {
-                        com.example.sidebar.recording.RecordingAudioMode.MICROPHONE
-                    } else {
-                        com.example.sidebar.recording.RecordingAudioMode.NONE
-                    }
+    private fun renderRecordingAudioPicker() {
+        val header = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
 
-                changeExpanded(false)
-                onRecord(mode)
+        val back = TextView(context).apply {
+            text = "‹"
+            textSize = 30f
+            setTextColor(foregroundColor)
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            contentDescription = "Back"
+
+            setOnClickListener {
+                showingScreenshotDelayPicker = false
+                showingRecordingAudioPicker = false
+                render()
             }
-            .setNegativeButton("Cancel", null)
-            .create()
+        }
 
-        dialog.window?.setType(
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        header.addView(
+            back,
+            LayoutParams(dp(36), dp(44))
         )
 
-        dialog.show()
+        val title = TextView(context).apply {
+            text = "RECORDING AUDIO"
+            textSize = 12f
+            letterSpacing = 0.1f
+            setTextColor(foregroundColor)
+            gravity = Gravity.CENTER_VERTICAL
+            includeFontPadding = false
+        }
+
+        header.addView(
+            title,
+            LayoutParams(0, dp(44), 1f)
+        )
+
+        addView(
+            header,
+            LayoutParams(LayoutParams.MATCH_PARENT, dp(44))
+        )
+
+        val selectedMode = getSelectedRecordingAudioMode()
+
+        listOf(
+            RecordingAudioMode.MICROPHONE to "Microphone",
+            RecordingAudioMode.NONE to "No audio"
+        ).forEach { (mode, label) ->
+            val option = TextView(context).apply {
+                text = if (selectedMode == mode) {
+                    "✓  $label"
+                } else {
+                    label
+                }
+
+                textSize = 14f
+                setTextColor(foregroundColor)
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), 0, dp(10), 0)
+                background = roundedBackground(actionColor, 12)
+                isClickable = true
+                isFocusable = true
+
+                setOnClickListener {
+                    settingsPrefs.edit()
+                        .putString(KEY_RECORDING_AUDIO_MODE, mode.name)
+                        .apply()
+
+                    showingRecordingAudioPicker = false
+                    render()
+                }
+            }
+
+            addView(
+                option,
+                LayoutParams(LayoutParams.MATCH_PARENT, dp(48)).apply {
+                    topMargin = dp(6)
+                }
+            )
+        }
+    }
+
+    private fun showRecordingAudioPicker() {
+        showingRecordingAudioPicker = true
+        render()
     }
 
     private fun createIconButton(
@@ -737,16 +874,30 @@ class SidebarOverlayView(
         onLongClick: (() -> Unit)? = null,
         onClick: () -> Unit
     ): View {
-        return ImageView(context).apply {
+        val iconSize = dp(24)
+
+        return FrameLayout(context).apply {
             contentDescription = description
-            setImageResource(iconRes)
-            setColorFilter(foregroundColor)
-            scaleType = ImageView.ScaleType.CENTER
             background = roundedBackground(actionColor, 100)
             isClickable = true
             isFocusable = true
 
+            val icon = ImageView(context).apply {
+                setImageResource(iconRes)
+                setColorFilter(Color.rgb(85, 85, 85))
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                layoutParams = FrameLayout.LayoutParams(
+                    iconSize,
+                    iconSize,
+                    Gravity.CENTER
+                )
+                isClickable = false
+            }
+
+            addView(icon)
+
             setOnClickListener { onClick() }
+
             setOnLongClickListener {
                 if (onLongClick != null) {
                     onLongClick()
@@ -757,6 +908,7 @@ class SidebarOverlayView(
             }
         }
     }
+
 
     private fun roundedBackground(
         color: Int,

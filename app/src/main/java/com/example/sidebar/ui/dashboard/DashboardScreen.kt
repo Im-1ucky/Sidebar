@@ -1,4 +1,3 @@
-
 package com.example.sidebar.ui.dashboard
 
 import androidx.compose.foundation.BorderStroke
@@ -28,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.sidebar.recording.RecordingAudioMode
 
 @Composable
 fun DashboardScreen(
@@ -39,9 +39,12 @@ fun DashboardScreen(
     onChooseScreenshotFolder: () -> Unit,
     onResetScreenshotFolder: () -> Unit,
     onChooseRecordingFolder: () -> Unit,
+    onResetRecordingFolder: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
-    onRestart: () -> Unit
+    onRestart: () -> Unit,
+    recordingAudioMode: RecordingAudioMode,
+    onRecordingAudioModeChanged: (RecordingAudioMode) -> Unit,
 ) {
     val busy = state.operation != null
 
@@ -62,6 +65,7 @@ fun DashboardScreen(
                 fontWeight = FontWeight.SemiBold
             )
 
+            // Sidebar service controls
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
@@ -77,7 +81,9 @@ fun DashboardScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
                             Text(
                                 text = "SIDEBAR SERVICE",
                                 style = MaterialTheme.typography.labelMedium,
@@ -103,7 +109,11 @@ fun DashboardScreen(
                             color = MaterialTheme.colorScheme.surfaceVariant
                         ) {
                             Text(
-                                text = if (state.serviceRunning) "ACTIVE" else "INACTIVE",
+                                text = if (state.serviceRunning) {
+                                    "ACTIVE"
+                                } else {
+                                    "INACTIVE"
+                                },
                                 modifier = Modifier.padding(
                                     horizontal = 12.dp,
                                     vertical = 8.dp
@@ -177,6 +187,7 @@ fun DashboardScreen(
                 }
             }
 
+            // Screenshot settings
             Text(
                 text = "Screenshot settings",
                 style = MaterialTheme.typography.titleLarge,
@@ -209,19 +220,29 @@ fun DashboardScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         listOf(0, 3, 5).forEach { seconds ->
-                            val label = if (seconds == 0) "Instant" else "${seconds}s"
+                            val label = if (seconds == 0) {
+                                "Instant"
+                            } else {
+                                "${seconds}s"
+                            }
 
                             if (captureDelaySeconds == seconds) {
                                 Button(
-                                    onClick = { onCaptureDelayChanged(seconds) }
+                                    onClick = {
+                                        onCaptureDelayChanged(seconds)
+                                    }
                                 ) {
                                     Text(label)
                                 }
                             } else {
                                 OutlinedButton(
-                                    onClick = { onCaptureDelayChanged(seconds) }
+                                    onClick = {
+                                        onCaptureDelayChanged(seconds)
+                                    }
                                 ) {
                                     Text(label)
                                 }
@@ -247,7 +268,7 @@ fun DashboardScreen(
                         Text("Choose folder")
                     }
 
-                    if (screenshotFolderLabel != "Pictures/Sidebar (default)") {
+                    if (screenshotFolderLabel.endsWith("(custom)")) {
                         OutlinedButton(
                             onClick = onResetScreenshotFolder,
                             modifier = Modifier.fillMaxWidth()
@@ -258,6 +279,7 @@ fun DashboardScreen(
                 }
             }
 
+            // Screen recording settings
             Text(
                 text = "Screen recording settings",
                 style = MaterialTheme.typography.titleLarge,
@@ -280,6 +302,44 @@ fun DashboardScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
+                        text = "Recording audio",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        RecordingAudioMode.entries.forEach { mode ->
+                            val label = when (mode) {
+                                RecordingAudioMode.MICROPHONE -> "Microphone"
+                                RecordingAudioMode.NONE -> "No audio"
+                            }
+
+                            if (recordingAudioMode == mode) {
+                                Button(
+                                    onClick = {
+                                        onRecordingAudioModeChanged(mode)
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    // The selected button background indicates selection.
+                                    Text(label)
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = {
+                                        onRecordingAudioModeChanged(mode)
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(label)
+                                }
+                            }
+                        }
+                    }
+
+                    Text(
                         text = "Save recordings to",
                         style = MaterialTheme.typography.titleMedium
                     )
@@ -295,6 +355,15 @@ fun DashboardScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("Choose folder")
+                    }
+
+                    if (recordingFolderLabel.endsWith("(custom)")) {
+                        OutlinedButton(
+                            onClick = onResetRecordingFolder,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Use default folder")
+                        }
                     }
                 }
             }

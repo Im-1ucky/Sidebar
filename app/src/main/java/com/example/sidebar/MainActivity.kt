@@ -1,4 +1,3 @@
-
 package com.example.sidebar
 
 import android.content.BroadcastReceiver
@@ -9,6 +8,7 @@ import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.sidebar.recording.RecordingAudioMode
 import com.example.sidebar.screenshot.ScreenshotCaptureService
 import com.example.sidebar.sidebar.SidebarService
 import com.example.sidebar.ui.dashboard.DashboardScreen
@@ -43,6 +44,10 @@ class MainActivity : ComponentActivity() {
     private var screenshotFolderUri by mutableStateOf<String?>(null)
     private var recordingFolderUri by mutableStateOf<String?>(null)
     private var captureDelaySeconds by mutableIntStateOf(0)
+
+    private var recordingAudioMode by mutableStateOf(
+        RecordingAudioMode.MICROPHONE
+    )
 
     private val overlayPermissionLauncher =
         registerForActivityResult(
@@ -111,7 +116,7 @@ class MainActivity : ComponentActivity() {
             val data = result.data
             val uri = data?.data
 
-            if (result.resultCode == RESULT_OK && uri != null) {
+            if (result.resultCode == RESULT_OK && uri != null && data != null) {
                 persistFolderSelection(
                     uri = uri,
                     flags = data.flags,
@@ -128,7 +133,7 @@ class MainActivity : ComponentActivity() {
             val data = result.data
             val uri = data?.data
 
-            if (result.resultCode == RESULT_OK && uri != null) {
+            if (result.resultCode == RESULT_OK && uri != null && data != null) {
                 persistFolderSelection(
                     uri = uri,
                     flags = data.flags,
@@ -138,11 +143,58 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    /**
+     * Recognizes the app's default Pictures/Sidebar directory when selected
+     * through Android's standard external-storage document provider.
+     */
+    private fun isDefaultFolder(uri: Uri): Boolean {
+        if (uri.authority != EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY) {
+            return false
+        }
+
+        val documentId = runCatching {
+            DocumentsContract.getTreeDocumentId(uri)
+        }.getOrNull() ?: return false
+
+        return documentId.equals(
+            DEFAULT_FOLDER_DOCUMENT_ID,
+            ignoreCase = true
+        )
+    }
+
+    /**
+     * Displays the saved folder path and whether it is the default or custom.
+     */
+    private fun getFolderLabel(savedUri: String?): String {
+        if (savedUri == null) {
+            return "$DEFAULT_FOLDER_PATH (default)"
+        }
+
+        val uri = Uri.parse(savedUri)
+
+        val documentId = runCatching {
+            DocumentsContract.getTreeDocumentId(uri)
+        }.getOrNull()
+
+        val folderPath = documentId
+            ?.substringAfter(':', documentId)
+            ?.trim('/')
+            ?.takeIf { it.isNotBlank() }
+            ?: uri.lastPathSegment
+            ?: "Selected folder"
+
+        return "$folderPath (custom)"
+    }
+
+    /**
+     * Saves a folder selection, unless it is the default folder.
+     * Selecting the default folder removes the custom URI preference.
+     */
     private fun persistFolderSelection(
         uri: Uri,
         flags: Int,
         preferenceKey: String,
-        onSaved: (String) -> Unit
+        onSaved: (String?) -> Unit
     ) {
         val grantedFlags = flags and (
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
@@ -150,17 +202,94 @@ class MainActivity : ComponentActivity() {
                 )
 
         try {
+            if (isDefaultFolder(uri)) {
+                // Clear a previously saved custom folder, if any.
+                val previousUri = preferences.getString(preferenceKey, null)
+
+                if (previousUri != null && previousUri != uri.toString()) {
+                    releaseFolderPermission(previousUri)
+                }
+
+                // The picker may already have granted a temporary/persistable
+                // permission. Release it because the default uses MediaStore.
+                runCatching {
+                    contentResolver.releasePersistableUriPermission(
+                        uri,
+                        grantedFlags
+                    )
+                }
+
+                preferences.edit()
+                    .remove(preferenceKey)
+                    .apply()
+
+                onSaved(null)
+                return
+            }
+
             contentResolver.takePersistableUriPermission(uri, grantedFlags)
 
             val uriString = uri.toString()
+            val previousUri = preferences.getString(preferenceKey, null)
+
             preferences.edit()
                 .putString(preferenceKey, uriString)
                 .apply()
+
+            // Release the old folder permission if the selection changed.
+            if (previousUri != null && previousUri != uriString) {
+                releaseFolderPermission(previousUri)
+            }
 
             onSaved(uriString)
         } catch (exception: Exception) {
             Log.e(TAG, "Couldn't save folder permission for $uri", exception)
         }
+    }
+
+    private fun releaseFolderPermission(savedUri: String?) {
+        if (savedUri == null) return
+
+        runCatching {
+            contentResolver.releasePersistableUriPermission(
+                Uri.parse(savedUri),
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        }
+    }
+
+    private fun resetScreenshotFolder() {
+        releaseFolderPermission(screenshotFolderUri)
+
+        screenshotFolderUri = null
+
+        preferences.edit()
+            .remove(KEY_FOLDER_URI)
+            .apply()
+    }
+
+    private fun resetRecordingFolder() {
+        releaseFolderPermission(recordingFolderUri)
+
+        recordingFolderUri = null
+
+        preferences.edit()
+            .remove(KEY_RECORDING_FOLDER_URI)
+            .apply()
+    }
+
+    private fun loadRecordingAudioMode(): RecordingAudioMode {
+        val savedMode = preferences.getString(
+            KEY_RECORDING_AUDIO_MODE,
+            RecordingAudioMode.MICROPHONE.name
+        )
+
+        return runCatching {
+            RecordingAudioMode.valueOf(
+                savedMode ?: RecordingAudioMode.MICROPHONE.name
+            )
+        }.getOrDefault(RecordingAudioMode.MICROPHONE)
     }
 
     private val serviceReceiver = object : BroadcastReceiver() {
@@ -210,64 +339,69 @@ class MainActivity : ComponentActivity() {
         recordingFolderUri =
             preferences.getString(KEY_RECORDING_FOLDER_URI, null)
         captureDelaySeconds = preferences.getInt(KEY_CAPTURE_DELAY, 0)
+        recordingAudioMode = loadRecordingAudioMode()
 
         enableEdgeToEdge()
 
         setContent {
             SidebarTheme {
                 dashboardViewModel = viewModel()
+
                 dashboardViewModel.syncServiceState(
                     SidebarService.isRunning(this@MainActivity)
                 )
+
                 val state by dashboardViewModel.uiState.collectAsState()
 
                 DashboardScreen(
                     state = state,
+
                     screenshotFolderLabel =
-                        if (screenshotFolderUri == null) {
-                            "Pictures/Sidebar (default)"
-                        } else {
-                            "Custom folder selected"
-                        },
+                        getFolderLabel(screenshotFolderUri),
+
                     recordingFolderLabel =
-                        if (recordingFolderUri == null) {
-                            "Pictures/Sidebar (default)"
-                        } else {
-                            "Custom folder selected"
-                        },
+                        getFolderLabel(recordingFolderUri),
+
                     captureDelaySeconds = captureDelaySeconds,
+
                     onCaptureDelayChanged = { seconds ->
                         captureDelaySeconds = seconds
+
                         preferences.edit()
                             .putInt(KEY_CAPTURE_DELAY, seconds)
                             .apply()
                     },
+
                     onChooseScreenshotFolder = {
                         screenshotFolderPickerLauncher.launch(
                             Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
                         )
                     },
-                    onResetScreenshotFolder = {
-                        screenshotFolderUri?.let { savedUri ->
-                            runCatching {
-                                contentResolver.releasePersistableUriPermission(
-                                    Uri.parse(savedUri),
-                                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                                )
-                            }
-                        }
 
-                        screenshotFolderUri = null
-                        preferences.edit()
-                            .remove(KEY_FOLDER_URI)
-                            .apply()
+                    onResetScreenshotFolder = {
+                        resetScreenshotFolder()
                     },
+
                     onChooseRecordingFolder = {
                         recordingFolderPickerLauncher.launch(
                             Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
                         )
                     },
+
+                    onResetRecordingFolder = {
+                        resetRecordingFolder()
+                    },
+
+                    recordingAudioMode = recordingAudioMode,
+
+                    onRecordingAudioModeChanged = { mode ->
+                        recordingAudioMode = mode
+
+                        preferences.edit()
+                            .putString(KEY_RECORDING_AUDIO_MODE, mode.name)
+                            .apply()
+                    },
+
                     onStart = {
                         if (pendingOperation == null) {
                             pendingOperation = ServiceOperation.START
@@ -275,6 +409,7 @@ class MainActivity : ComponentActivity() {
                             startSidebarWithPermission()
                         }
                     },
+
                     onStop = {
                         if (pendingOperation == null) {
                             pendingOperation = ServiceOperation.STOP
@@ -282,6 +417,7 @@ class MainActivity : ComponentActivity() {
                             SidebarService.stop(this@MainActivity)
                         }
                     },
+
                     onRestart = {
                         if (pendingOperation == null) {
                             pendingOperation = ServiceOperation.RESTART
@@ -296,6 +432,11 @@ class MainActivity : ComponentActivity() {
         if (intent?.action == ACTION_REQUEST_SCREENSHOT) {
             requestScreenshot()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        recordingAudioMode = loadRecordingAudioMode()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -324,12 +465,12 @@ class MainActivity : ComponentActivity() {
 
         waitingForOverlayPermission = true
 
-        val intent = Intent(
+        val permissionIntent = Intent(
             Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
             Uri.parse("package:$packageName")
         )
 
-        overlayPermissionLauncher.launch(intent)
+        overlayPermissionLauncher.launch(permissionIntent)
     }
 
     override fun onStart() {
@@ -369,8 +510,17 @@ class MainActivity : ComponentActivity() {
 
         private const val TAG = "MainActivity"
         private const val PREFS_NAME = "sidebar_preferences"
+
         private const val KEY_FOLDER_URI = "screenshot_folder_uri"
         private const val KEY_RECORDING_FOLDER_URI = "recording_folder_uri"
         private const val KEY_CAPTURE_DELAY = "screenshot_delay_seconds"
+        private const val KEY_RECORDING_AUDIO_MODE = "recording_audio_mode"
+
+        private const val DEFAULT_FOLDER_PATH = "Pictures/Sidebar"
+        private const val DEFAULT_FOLDER_DOCUMENT_ID =
+            "primary:Pictures/Sidebar"
+
+        private const val EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY =
+            "com.android.externalstorage.documents"
     }
 }
