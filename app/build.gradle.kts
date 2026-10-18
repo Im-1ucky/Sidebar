@@ -5,6 +5,7 @@ plugins {
 
 android {
     namespace = "com.example.sidebar"
+
     compileSdk {
         version = release(37)
     }
@@ -19,19 +20,44 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        val releaseStorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+        val releaseStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+        val releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
+        val releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+
+        if (
+            !releaseStorePath.isNullOrBlank() &&
+            !releaseStorePassword.isNullOrBlank() &&
+            !releaseKeyAlias.isNullOrBlank() &&
+            !releaseKeyPassword.isNullOrBlank()
+        ) {
+            create("release") {
+                storeFile = file(releaseStorePath)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = false
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+
     buildFeatures {
         compose = true
     }
@@ -47,11 +73,13 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
+
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
