@@ -275,7 +275,8 @@ class SidebarOverlayManager(
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-
+            layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             // Restore the previously saved edge.
             anchoredLeft = screenshotPreferences.getBoolean(
                 KEY_SIDEBAR_LEFT,
