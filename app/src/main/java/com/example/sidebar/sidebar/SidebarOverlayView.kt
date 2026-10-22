@@ -362,6 +362,12 @@ class SidebarOverlayView(
             background = null
             val pillColor = if (isDarkTheme) Color.WHITE else Color.BLACK
             handle.background = roundedBackground(pillColor, 12)
+            Log.i(
+                TAG,
+                "Handle debug: color=$pillColor, " +
+                        "background=${handle.background != null}, " +
+                        "parent=${handle.parent != null}"
+            )
             addView(
                 handle,
                 LayoutParams(

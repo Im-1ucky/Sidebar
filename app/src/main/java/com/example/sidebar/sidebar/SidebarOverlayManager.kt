@@ -29,6 +29,7 @@ import kotlin.math.roundToInt
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toDrawable
 import com.example.sidebar.R
+import androidx.core.content.edit
 
 class SidebarOverlayManager(
     context: Context,
@@ -264,6 +265,7 @@ class SidebarOverlayManager(
             gravity = Gravity.TOP or Gravity.START
         }
 
+
         val params = WindowManager.LayoutParams(
             dp(12),
             dp(100),
@@ -273,16 +275,32 @@ class SidebarOverlayManager(
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = screenWidth() - dp(12)
-            y = (screenHeight() - dp(100)) / 2
+
+            // Restore the previously saved edge.
+            anchoredLeft = screenshotPreferences.getBoolean(
+                KEY_SIDEBAR_LEFT,
+                false
+            )
+
+            x = if (anchoredLeft) {
+                0
+            } else {
+                screenWidth() - dp(12)
+            }
+
+            // Restore the previously saved vertical position.
+            y = screenshotPreferences.getInt(
+                KEY_SIDEBAR_Y,
+                (screenHeight() - dp(100)) / 2
+            )
         }
 
         val sidebarView = SidebarOverlayView(
             context = appContext,
 
             onExpandChanged = { expanded ->
-                params.width = dp(if (expanded) 260 else 12)
-                params.height = dp(if (expanded) 440 else 100)
+                params.width = dp(if (expanded) 220 else 12)
+                params.height = dp(if (expanded) 360 else 100)
 
                 params.x = if (anchoredLeft) {
                     0
@@ -311,6 +329,7 @@ class SidebarOverlayManager(
                 updateOverlayLayout()
             },
 
+
             onDragFinished = { rawX ->
                 anchoredLeft = rawX < screenWidth() / 2f
                 params.width = dp(12)
@@ -322,9 +341,15 @@ class SidebarOverlayManager(
                 }
 
                 clampPosition(params, false)
+
+                // Persist both the selected edge and vertical position.
+                screenshotPreferences.edit {
+                    putBoolean(KEY_SIDEBAR_LEFT, anchoredLeft)
+                        .putInt(KEY_SIDEBAR_Y, params.y)
+                }
+
                 updateOverlayLayout()
             },
-
             onDragModeChanged = { active ->
                 if (overlay?.isExpanded != true) {
                     params.width = dp(if (active) 20 else 12)
@@ -376,6 +401,46 @@ class SidebarOverlayManager(
 
             Log.i(
                 TAG,
+                "Overlay debug BEFORE LAYOUT: " +
+                        "attached=${sidebarView.isAttachedToWindow}, " +
+                        "width=${sidebarView.width}, height=${sidebarView.height}, " +
+                        "x=${params.x}, y=${params.y}, " +
+                        "visibility=${sidebarView.visibility}, " +
+                        "shown=${sidebarView.isShown}"
+            )
+
+            sidebarView.post {
+                val currentParams =
+                    sidebarView.layoutParams as? WindowManager.LayoutParams
+
+                val location = IntArray(2)
+                sidebarView.getLocationOnScreen(location)
+
+                Log.i(
+                    TAG,
+                    "Screen debug: " +
+                            "screenWidth=${screenWidth()}, " +
+                            "screenHeight=${screenHeight()}, " +
+                            "viewX=${location[0]}, viewY=${location[1]}, " +
+                            "viewWidth=${sidebarView.width}, " +
+                            "viewHeight=${sidebarView.height}"
+                )
+
+                Log.i(
+                    TAG,
+                    "Overlay debug AFTER LAYOUT: " +
+                            "attached=${sidebarView.isAttachedToWindow}, " +
+                            "width=${sidebarView.width}, " +
+                            "height=${sidebarView.height}, " +
+                            "x=${currentParams?.x}, " +
+                            "y=${currentParams?.y}, " +
+                            "visibility=${sidebarView.visibility}, " +
+                            "shown=${sidebarView.isShown}"
+                )
+            }
+
+            Log.i(
+                TAG,
                 "Sidebar added; attached=${sidebarView.isAttachedToWindow}"
             )
 
@@ -413,8 +478,8 @@ class SidebarOverlayManager(
             windowManager.updateViewLayout(outsideView, outsideParams)
         }
 
-        params.width = dp(if (sidebarView.isExpanded) 260 else 12)
-        params.height = dp(if (sidebarView.isExpanded) 440 else 100)
+        params.width = dp(if (sidebarView.isExpanded) 220 else 12)
+        params.height = dp(if (sidebarView.isExpanded) 360 else 100)
 
         params.x = if (anchoredLeft) {
             0
@@ -435,7 +500,7 @@ class SidebarOverlayManager(
             (screenWidth() - params.width).coerceAtLeast(0)
         )
 
-        val fallbackHeight = dp(if (expanded) 440 else 100)
+        val fallbackHeight = dp(if (expanded) 360 else 100)
         val viewHeight = overlay?.height?.takeIf { it > 0 }
             ?: fallbackHeight
 
@@ -881,7 +946,10 @@ class SidebarOverlayManager(
     private fun dp(value: Int): Int =
         (value * appContext.resources.displayMetrics.density).roundToInt()
 
+
     private companion object {
         const val TAG = "SidebarOverlayManager"
+        const val KEY_SIDEBAR_Y = "sidebar_position_y"
+        const val KEY_SIDEBAR_LEFT = "sidebar_anchored_left"
     }
 }
