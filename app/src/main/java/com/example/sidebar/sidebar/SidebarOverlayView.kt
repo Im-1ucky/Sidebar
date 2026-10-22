@@ -61,6 +61,12 @@ class SidebarOverlayView(
     }
 
     private var launchableAppsCache: List<LaunchableApp>? = null
+
+    fun clearLaunchableAppsCache() {
+        launchableAppsCache = null
+        loadingLaunchableApps = false
+        Log.i(TAG, "Launchable apps cache cleared")
+    }
     private var loadingLaunchableApps = false
 
     private val panelColor = Color.argb(240, 255, 255, 255)
@@ -569,19 +575,24 @@ class SidebarOverlayView(
         } else {
 
             launchableApps.forEach { app ->
+                val selectedPackages = getSelectedPackages()
+
                 addAppRow(
                     container = list,
                     app = app,
-                ) {
-                    val selected = getSelectedPackages().toMutableSet()
+                    onSelect = {
+                        val selected = getSelectedPackages().toMutableSet()
 
-                    if (!selected.add(app.packageName)) {
-                        selected.remove(app.packageName)
-                    }
+                        if (!selected.add(app.packageName)) {
+                            selected.remove(app.packageName)
+                        }
 
-                    saveSelectedPackages(selected)
-                    render()
-                }
+                        saveSelectedPackages(selected)
+                        render()
+                    },
+                    showSelection = true,
+                    isSelected = app.packageName in selectedPackages
+                )
             }
         }
 
@@ -639,7 +650,9 @@ class SidebarOverlayView(
     private fun addAppRow(
         container: LinearLayout,
         app: LaunchableApp,
-        onSelect: (() -> Unit)? = null
+        onSelect: (() -> Unit)? = null,
+        showSelection: Boolean = false,
+        isSelected: Boolean = false
     ) {
         val row = LinearLayout(context).apply {
             orientation = HORIZONTAL
@@ -671,6 +684,20 @@ class SidebarOverlayView(
                 name,
                 LayoutParams(0, LayoutParams.MATCH_PARENT, 1f)
             )
+            if (showSelection) {
+                val checkmark = TextView(context).apply {
+                    text = if (isSelected) "✓" else ""
+                    textSize = 18f
+                    setTextColor(foregroundColor)
+                    gravity = Gravity.CENTER
+                    contentDescription = if (isSelected) "Selected" else "Not selected"
+                }
+
+                addView(
+                    checkmark,
+                    LayoutParams(dp(28), LayoutParams.MATCH_PARENT)
+                )
+            }
         }
 
         row.setOnClickListener {

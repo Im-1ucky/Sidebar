@@ -214,6 +214,10 @@ class SidebarOverlayManager(
         return overlay?.isAttachedToWindow == true
     }
 
+    fun clearLaunchableAppsCache() {
+        overlay?.clearLaunchableAppsCache()
+    }
+
     fun setOnOverlayAttachmentChanged(
         callback: (Boolean) -> Unit
     ) {

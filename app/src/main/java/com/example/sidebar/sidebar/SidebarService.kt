@@ -25,7 +25,11 @@ class SidebarService : Service() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 Intent.ACTION_SCREEN_ON -> showOverlay()
-                Intent.ACTION_SCREEN_OFF -> hideOverlay()
+
+                Intent.ACTION_SCREEN_OFF -> {
+                    overlayManager?.clearLaunchableAppsCache()
+                    hideOverlay()
+                }
             }
         }
     }
