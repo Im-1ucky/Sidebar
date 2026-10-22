@@ -41,11 +41,6 @@ class DashboardViewModel : ViewModel() {
         _uiState.update {
             it.copy(
                 operation = operation,
-                message = when (operation) {
-                    ServiceOperation.START -> "Starting sidebar service…"
-                    ServiceOperation.STOP -> "Stopping sidebar service…"
-                    ServiceOperation.RESTART -> "Restarting sidebar service…"
-                }
             )
         }
     }
@@ -59,11 +54,6 @@ class DashboardViewModel : ViewModel() {
                 serviceRunning = running,
                 sidebarVisible = running && visible,
                 operation = null,
-                message = when {
-                    !running -> "Sidebar service stopped."
-                    visible -> "Sidebar is visible."
-                    else -> "Service running; sidebar hidden."
-                }
             )
         }
     }

@@ -137,11 +137,11 @@ fun DashboardScreen(
                     Text(
                         text = when {
                             !state.serviceRunning ->
-                                "The sidebar service is stopped."
+                                "The sidebar service has stopped."
                             state.sidebarVisible ->
-                                "The sidebar service is running and the overlay is attached."
+                                "The sidebar service is running and the sidebar is visible."
                             else ->
-                                "The service is running, but the sidebar overlay is hidden or detached."
+                                "The service is running, but the sidebar is hidden."
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
