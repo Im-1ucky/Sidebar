@@ -1,2 +1,1 @@
-2. Change the sidebar color based on theme
 3. Check the dashboard once

@@ -69,9 +69,27 @@ class SidebarOverlayView(
     }
     private var loadingLaunchableApps = false
 
-    private val panelColor = Color.argb(240, 255, 255, 255)
-    private val actionColor = Color.argb(210, 225, 225, 225)
-    private val foregroundColor = Color.BLACK
+    private val isDarkTheme: Boolean
+        get() = (resources.configuration.uiMode and
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+    private val panelColor: Int
+        get() = if (isDarkTheme) {
+            Color.argb(245, 28, 28, 28)
+        } else {
+            Color.argb(245, 250, 250, 250)
+        }
+
+    private val actionColor: Int
+        get() = if (isDarkTheme) {
+            Color.argb(255, 55, 55, 55)
+        } else {
+            Color.argb(255, 230, 230, 230)
+        }
+
+    private val foregroundColor: Int
+        get() = if (isDarkTheme) Color.WHITE else Color.BLACK
     private val touchSlop = dp(6)
     private val swipeThreshold = dp(40)
     private val longPressTimeout = 250L
@@ -342,8 +360,8 @@ class SidebarOverlayView(
             orientation = VERTICAL
             gravity = Gravity.CENTER
             background = null
-            handle.background = roundedBackground(panelColor, 12)
-
+            val pillColor = if (isDarkTheme) Color.WHITE else Color.BLACK
+            handle.background = roundedBackground(pillColor, 12)
             addView(
                 handle,
                 LayoutParams(
@@ -422,7 +440,7 @@ class SidebarOverlayView(
 
         val heading = TextView(context).apply {
             text = context.getString(R.string.sidebar_app_shortcuts)
-            setTextColor(Color.DKGRAY)
+            setTextColor(foregroundColor)
             textSize = 11f
             letterSpacing = 0.1f
             gravity = Gravity.CENTER_VERTICAL
@@ -636,7 +654,7 @@ class SidebarOverlayView(
         val status = TextView(context).apply {
             text = context.getString(R.string.sidebar_loading_apps)
             textSize = 13f
-            setTextColor(Color.DKGRAY)
+            setTextColor(foregroundColor)
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(16), dp(8), dp(16))
         }
@@ -938,7 +956,7 @@ class SidebarOverlayView(
 
             val icon = ImageView(context).apply {
                 setImageResource(iconRes)
-                setColorFilter(Color.rgb(85, 85, 85))
+                setColorFilter(foregroundColor)
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 layoutParams = FrameLayout.LayoutParams(
                     iconSize,
