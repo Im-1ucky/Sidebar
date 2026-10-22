@@ -61,8 +61,10 @@ class SidebarOverlayView(
     }
 
     private var launchableAppsCache: List<LaunchableApp>? = null
+    private var appLoadGeneration = 0
 
     fun clearLaunchableAppsCache() {
+        appLoadGeneration++
         launchableAppsCache = null
         loadingLaunchableApps = false
         Log.i(TAG, "Launchable apps cache cleared")
@@ -167,6 +169,7 @@ class SidebarOverlayView(
         }
 
         loadingLaunchableApps = true
+        val generation = appLoadGeneration
 
         appLoader.execute {
             val apps = try {
@@ -177,6 +180,10 @@ class SidebarOverlayView(
             }
 
             handler.post {
+                if (generation != appLoadGeneration) {
+                    return@post
+                }
+
                 launchableAppsCache = apps
                 loadingLaunchableApps = false
 
@@ -1000,4 +1007,10 @@ class SidebarOverlayView(
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).roundToInt()
+
+    fun cleanup() {
+        appLoadGeneration++
+        handler.removeCallbacksAndMessages(null)
+        appLoader.shutdown()
+    }
 }

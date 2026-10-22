@@ -322,6 +322,19 @@ class MainActivity : ComponentActivity() {
         startActivity(settingsIntent)
     }
 
+    private fun syncServiceStateFromBroadcast(intent: Intent) {
+        dashboardViewModel.syncServiceState(
+            running = intent.getBooleanExtra(
+                SidebarService.EXTRA_RUNNING,
+                false
+            ),
+            visible = intent.getBooleanExtra(
+                SidebarService.EXTRA_VISIBLE,
+                false
+            )
+        )
+    }
+
 
     private val serviceReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -335,8 +348,14 @@ class MainActivity : ComponentActivity() {
                     ) {
                         pendingOperation = null
                         dashboardViewModel.operationCompleted(
-                            running = true,
-                            visible = SidebarService.isOverlayVisible(this@MainActivity)
+                            running = intent.getBooleanExtra(
+                                SidebarService.EXTRA_RUNNING,
+                                true
+                            ),
+                            visible = intent.getBooleanExtra(
+                                SidebarService.EXTRA_VISIBLE,
+                                false
+                            )
                         )
                     }
                 }
@@ -361,17 +380,17 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        else -> Unit
+                        else -> {
+                            dashboardViewModel.operationCompleted(
+                                running = false,
+                                visible = false
+                            )
+                        }
                     }
                 }
 
-
-                // ADD THIS BRANCH HERE
                 SidebarService.ACTION_VISIBILITY_CHANGED -> {
-                    dashboardViewModel.syncServiceState(
-                        running = SidebarService.isRunning(this@MainActivity),
-                        visible = SidebarService.isOverlayVisible(this@MainActivity)
-                    )
+                    syncServiceStateFromBroadcast(intent)
                 }
             }
         }

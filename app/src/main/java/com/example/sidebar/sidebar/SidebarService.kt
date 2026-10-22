@@ -76,7 +76,11 @@ class SidebarService : Service() {
         }
 
         Log.i(TAG, "Service started")
-        sendServiceEvent(ACTION_STARTED)
+        sendServiceEvent(
+            ACTION_STARTED,
+            running = true,
+            visible = overlayVisible
+        )
 
         return START_STICKY
     }
@@ -147,7 +151,11 @@ class SidebarService : Service() {
                 putBoolean(KEY_VISIBLE, visible)
             }
 
-        sendServiceEvent(ACTION_VISIBILITY_CHANGED)
+        sendServiceEvent(
+            ACTION_VISIBILITY_CHANGED,
+            running = true,
+            visible = visible
+        )
 
         Log.i(TAG, "Sidebar visibility updated: $visible")
     }
@@ -163,7 +171,7 @@ class SidebarService : Service() {
             screenReceiverRegistered = false
         }
 
-        hideOverlay()
+        overlayManager?.destroy()
         overlayManager = null
 
         getSharedPreferences(STATE_PREFS, MODE_PRIVATE).edit {
@@ -171,12 +179,25 @@ class SidebarService : Service() {
             putBoolean(KEY_VISIBLE, false)
         }
 
-        sendServiceEvent(ACTION_STOPPED)
+        sendServiceEvent(
+            ACTION_STOPPED,
+            running = false,
+            visible = false
+        )
         super.onDestroy()
     }
 
-    private fun sendServiceEvent(action: String) {
-        sendBroadcast(Intent(action).setPackage(packageName))
+    private fun sendServiceEvent(
+        action: String,
+        running: Boolean,
+        visible: Boolean
+    ) {
+        sendBroadcast(
+            Intent(action)
+                .setPackage(packageName)
+                .putExtra(EXTRA_RUNNING, running)
+                .putExtra(EXTRA_VISIBLE, running && visible)
+        )
     }
 
     private fun createNotificationChannel() {
@@ -205,6 +226,8 @@ class SidebarService : Service() {
         private const val STATE_PREFS = "sidebar_service_state"
         private const val KEY_RUNNING = "running"
         private const val KEY_VISIBLE = "visible"
+        const val EXTRA_RUNNING = "com.example.sidebar.EXTRA_RUNNING"
+        const val EXTRA_VISIBLE = "com.example.sidebar.EXTRA_VISIBLE"
 
         const val ACTION_START = "com.example.sidebar.ACTION_START"
         const val ACTION_STARTED = "com.example.sidebar.ACTION_STARTED"

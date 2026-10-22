@@ -362,7 +362,7 @@ class ScreenshotCaptureService : Service() {
             return
         }
 
-        Log.i(TAG, "Scheduling capture after ${delaySeconds}s + 400ms")
+        Log.i(TAG, "Scheduling capture after ${delaySeconds}s")
 
         mainHandler.postDelayed({
             if (finished.get()) {
@@ -381,7 +381,7 @@ class ScreenshotCaptureService : Service() {
                             "${captureRequestedAtMs.get()}ms"
                 )
             }
-        }, delaySeconds * 1000L + 400L)
+        }, delaySeconds * 1000L)
     }
 
     private fun saveBitmap(bitmap: Bitmap): Boolean {

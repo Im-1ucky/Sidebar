@@ -88,6 +88,15 @@ class SidebarOverlayManager(
         }
     }
 
+    fun destroy() {
+        val oldOverlay = overlay
+        hide()
+        oldOverlay?.cleanup()
+        recordingHandler.removeCallbacksAndMessages(null)
+        unregisterRecordingReceiver()
+        onAttachmentChanged = null
+    }
+
     private val screenshotPreferences = appContext.getSharedPreferences(
         "sidebar_preferences",
         Context.MODE_PRIVATE
@@ -231,7 +240,9 @@ class SidebarOverlayManager(
 
         if (overlay != null) {
             Log.w(TAG, "Sidebar view exists but is detached; recreating it")
+            val oldOverlay = overlay
             hide()
+            oldOverlay?.cleanup()
         }
 
         check(Settings.canDrawOverlays(appContext)) {
@@ -909,10 +920,6 @@ class SidebarOverlayManager(
         closeScreenshotPill()
         unregisterScreenshotReceiver()
 
-        // Stop the recording pill timer, but do not stop an active recording.
-        // Keep the pill visible for an active recording session.
-        unregisterRecordingReceiver()
-
         try {
             if (callbacksRegistered) {
                 appContext.unregisterComponentCallbacks(configurationCallbacks)
@@ -937,6 +944,7 @@ class SidebarOverlayManager(
             outsideTouchParams = null
         }
     }
+
 
     private fun screenWidth(): Int =
         windowManager.currentWindowMetrics.bounds.width()
