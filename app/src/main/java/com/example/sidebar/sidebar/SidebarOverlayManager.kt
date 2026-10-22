@@ -40,6 +40,7 @@ class SidebarOverlayManager(
         appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
     private var overlay: SidebarOverlayView? = null
+    private var onAttachmentChanged: ((Boolean) -> Unit)? = null
     private var layoutParams: WindowManager.LayoutParams? = null
     private var outsideTouchView: View? = null
     private var outsideTouchParams: WindowManager.LayoutParams? = null
@@ -209,8 +210,24 @@ class SidebarOverlayManager(
         }
     }
 
+    fun isOverlayAttached(): Boolean {
+        return overlay?.isAttachedToWindow == true
+    }
+
+    fun setOnOverlayAttachmentChanged(
+        callback: (Boolean) -> Unit
+    ) {
+        onAttachmentChanged = callback
+        callback(isOverlayAttached())
+    }
+
     fun show() {
-        if (overlay != null) return
+        if (overlay?.isAttachedToWindow == true) return
+
+        if (overlay != null) {
+            Log.w(TAG, "Sidebar view exists but is detached; recreating it")
+            hide()
+        }
 
         check(Settings.canDrawOverlays(appContext)) {
             "Display over other apps permission is required."
@@ -337,9 +354,26 @@ class SidebarOverlayManager(
         outsideTouchView = outsideView
         outsideTouchParams = outsideParams
 
+        sidebarView.addOnAttachStateChangeListener(
+            object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(view: View) {
+                    onAttachmentChanged?.invoke(true)
+                }
+
+                override fun onViewDetachedFromWindow(view: View) {
+                    onAttachmentChanged?.invoke(false)
+                }
+            }
+        )
+
         try {
             windowManager.addView(outsideView, outsideParams)
             windowManager.addView(sidebarView, params)
+
+            Log.i(
+                TAG,
+                "Sidebar added; attached=${sidebarView.isAttachedToWindow}"
+            )
 
             appContext.registerComponentCallbacks(configurationCallbacks)
             callbacksRegistered = true

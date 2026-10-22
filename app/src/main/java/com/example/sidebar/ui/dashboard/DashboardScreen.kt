@@ -74,7 +74,6 @@ fun DashboardScreen(
                 fontWeight = FontWeight.SemiBold
             )
 
-            // Sidebar service controls
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
@@ -107,8 +106,9 @@ fun DashboardScreen(
                                     state.operation == ServiceOperation.START -> "Starting…"
                                     state.operation == ServiceOperation.STOP -> "Stopping…"
                                     state.operation == ServiceOperation.RESTART -> "Restarting…"
-                                    state.serviceRunning -> "Running"
-                                    else -> "Stopped"
+                                    !state.serviceRunning -> "Stopped"
+                                    state.sidebarVisible -> "Running"
+                                    else -> "Running · Hidden"
                                 },
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.SemiBold
@@ -120,10 +120,10 @@ fun DashboardScreen(
                             color = MaterialTheme.colorScheme.surfaceVariant
                         ) {
                             Text(
-                                text = if (state.serviceRunning) {
-                                    "ACTIVE"
-                                } else {
-                                    "INACTIVE"
+                                text = when {
+                                    !state.serviceRunning -> "INACTIVE"
+                                    state.sidebarVisible -> "VISIBLE"
+                                    else -> "HIDDEN"
                                 },
                                 modifier = Modifier.padding(
                                     horizontal = 12.dp,
@@ -135,10 +135,25 @@ fun DashboardScreen(
                     }
 
                     Text(
-                        text = "Control the sidebar background service.",
+                        text = when {
+                            !state.serviceRunning ->
+                                "The sidebar service is stopped."
+                            state.sidebarVisible ->
+                                "The sidebar service is running and the overlay is attached."
+                            else ->
+                                "The service is running, but the sidebar overlay is hidden or detached."
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+
+                    state.message?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
 
                     Button(
                         onClick = onStart,
@@ -198,7 +213,6 @@ fun DashboardScreen(
                 }
             }
 
-            // Persistent permissions only
             Text(
                 text = "Permissions & Access",
                 style = MaterialTheme.typography.titleLarge,
@@ -241,7 +255,6 @@ fun DashboardScreen(
                 }
             }
 
-            // Screenshot settings
             Text(
                 text = "Screenshot settings",
                 style = MaterialTheme.typography.titleLarge,
@@ -278,25 +291,17 @@ fun DashboardScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         listOf(0, 3, 5).forEach { seconds ->
-                            val label = if (seconds == 0) {
-                                "Instant"
-                            } else {
-                                "${seconds}s"
-                            }
+                            val label = if (seconds == 0) "Instant" else "${seconds}s"
 
                             if (captureDelaySeconds == seconds) {
                                 Button(
-                                    onClick = {
-                                        onCaptureDelayChanged(seconds)
-                                    }
+                                    onClick = { onCaptureDelayChanged(seconds) }
                                 ) {
                                     Text(label)
                                 }
                             } else {
                                 OutlinedButton(
-                                    onClick = {
-                                        onCaptureDelayChanged(seconds)
-                                    }
+                                    onClick = { onCaptureDelayChanged(seconds) }
                                 ) {
                                     Text(label)
                                 }
@@ -333,7 +338,6 @@ fun DashboardScreen(
                 }
             }
 
-            // Screen recording settings
             Text(
                 text = "Screen recording settings",
                 style = MaterialTheme.typography.titleLarge,
@@ -372,18 +376,14 @@ fun DashboardScreen(
 
                             if (recordingAudioMode == mode) {
                                 Button(
-                                    onClick = {
-                                        onRecordingAudioModeChanged(mode)
-                                    },
+                                    onClick = { onRecordingAudioModeChanged(mode) },
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text(label)
                                 }
                             } else {
                                 OutlinedButton(
-                                    onClick = {
-                                        onRecordingAudioModeChanged(mode)
-                                    },
+                                    onClick = { onRecordingAudioModeChanged(mode) },
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text(label)

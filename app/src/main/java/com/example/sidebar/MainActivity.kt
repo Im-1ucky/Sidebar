@@ -322,6 +322,7 @@ class MainActivity : ComponentActivity() {
         startActivity(settingsIntent)
     }
 
+
     private val serviceReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -333,9 +334,13 @@ class MainActivity : ComponentActivity() {
                         pendingOperation == ServiceOperation.RESTART
                     ) {
                         pendingOperation = null
-                        dashboardViewModel.operationCompleted(running = true)
+                        dashboardViewModel.operationCompleted(
+                            running = true,
+                            visible = SidebarService.isOverlayVisible(this@MainActivity)
+                        )
                     }
                 }
+
 
                 SidebarService.ACTION_STOPPED -> {
                     Log.i(TAG, "Stop acknowledged")
@@ -348,6 +353,7 @@ class MainActivity : ComponentActivity() {
 
                         ServiceOperation.RESTART -> {
                             if (Settings.canDrawOverlays(this@MainActivity)) {
+                                Log.i(TAG, "Starting sidebar after stop completed")
                                 SidebarService.start(this@MainActivity)
                             } else {
                                 pendingOperation = null
@@ -358,9 +364,19 @@ class MainActivity : ComponentActivity() {
                         else -> Unit
                     }
                 }
+
+
+                // ADD THIS BRANCH HERE
+                SidebarService.ACTION_VISIBILITY_CHANGED -> {
+                    dashboardViewModel.syncServiceState(
+                        running = SidebarService.isRunning(this@MainActivity),
+                        visible = SidebarService.isOverlayVisible(this@MainActivity)
+                    )
+                }
             }
         }
     }
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -380,7 +396,8 @@ class MainActivity : ComponentActivity() {
                 dashboardViewModel = viewModel()
 
                 dashboardViewModel.syncServiceState(
-                    SidebarService.isRunning(this@MainActivity)
+                    running = SidebarService.isRunning(this@MainActivity),
+                    visible = SidebarService.isOverlayVisible(this@MainActivity)
                 )
 
                 val state by dashboardViewModel.uiState.collectAsState()
@@ -477,6 +494,12 @@ class MainActivity : ComponentActivity() {
 
         recordingAudioMode = loadRecordingAudioMode()
         refreshPermissionStates()
+        if (::dashboardViewModel.isInitialized) {
+            dashboardViewModel.syncServiceState(
+                running = SidebarService.isRunning(this),
+                visible = SidebarService.isOverlayVisible(this)
+            )
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -519,6 +542,7 @@ class MainActivity : ComponentActivity() {
         val filter = IntentFilter().apply {
             addAction(SidebarService.ACTION_STARTED)
             addAction(SidebarService.ACTION_STOPPED)
+            addAction(SidebarService.ACTION_VISIBILITY_CHANGED)
         }
 
         ContextCompat.registerReceiver(

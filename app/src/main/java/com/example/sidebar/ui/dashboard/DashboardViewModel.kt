@@ -14,6 +14,7 @@ enum class ServiceOperation {
 
 data class DashboardUiState(
     val serviceRunning: Boolean = false,
+    val sidebarVisible: Boolean = false,
     val serviceImplemented: Boolean = true,
     val operation: ServiceOperation? = null,
     val message: String? = null
@@ -24,9 +25,15 @@ class DashboardViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState = _uiState.asStateFlow()
 
-    fun syncServiceState(running: Boolean) {
+    fun syncServiceState(
+        running: Boolean,
+        visible: Boolean
+    ) {
         _uiState.update {
-            it.copy(serviceRunning = running)
+            it.copy(
+                serviceRunning = running,
+                sidebarVisible = running && visible
+            )
         }
     }
 
@@ -43,18 +50,21 @@ class DashboardViewModel : ViewModel() {
         }
     }
 
-    fun operationCompleted(running: Boolean) {
+    fun operationCompleted(
+        running: Boolean,
+        visible: Boolean = running
+    ) {
         _uiState.update {
             it.copy(
                 serviceRunning = running,
+                sidebarVisible = running && visible,
                 operation = null,
-                message = if (running) {
-                    "Sidebar service is running."
-                } else {
-                    "Sidebar service stopped."
+                message = when {
+                    !running -> "Sidebar service stopped."
+                    visible -> "Sidebar is visible."
+                    else -> "Service running; sidebar hidden."
                 }
             )
         }
     }
-
 }
