@@ -150,6 +150,7 @@ class SidebarOverlayManager(
 
     private val configurationCallbacks = object : ComponentCallbacks {
         override fun onConfigurationChanged(newConfig: Configuration) {
+            overlay?.refreshTheme()
             repositionForCurrentScreen()
         }
 

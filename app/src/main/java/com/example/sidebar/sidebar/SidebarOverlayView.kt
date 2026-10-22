@@ -358,6 +358,10 @@ class SidebarOverlayView(
         changeExpanded(false)
     }
 
+    fun refreshTheme() {
+        render()
+    }
+
     private fun render() {
         removeAllViews()
         setPadding(dp(14), dp(14), dp(14), dp(14))
@@ -390,6 +394,9 @@ class SidebarOverlayView(
         orientation = VERTICAL
         gravity = Gravity.CENTER_HORIZONTAL
         background = roundedBackground(panelColor, 24)
+
+        clipChildren = true
+        clipToPadding = true
 
         when {
             showingScreenshotDelayPicker -> {
@@ -470,7 +477,10 @@ class SidebarOverlayView(
 
         val scrollView = ScrollView(context).apply {
             isFillViewport = false
-            clipToPadding = false
+            clipToPadding = true
+            clipChildren = true
+            isVerticalScrollBarEnabled = false
+            overScrollMode = OVER_SCROLL_NEVER
 
             addView(
                 shortcutList,
