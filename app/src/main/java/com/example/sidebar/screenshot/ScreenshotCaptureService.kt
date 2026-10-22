@@ -52,7 +52,7 @@ class ScreenshotCaptureService : Service() {
     private val captureRequestedAtMs = AtomicLong(0L)
     private val captureTapAtMs = AtomicLong(0L)
 
-    // PNG compression and storage writing happen on this separate thread.
+    // JPEG compression and storage writing happen on this separate thread.
     private val saveExecutor = Executors.newSingleThreadExecutor()
 
     private var folderUri: Uri? = null
@@ -272,11 +272,11 @@ class ScreenshotCaptureService : Service() {
                             "${SystemClock.elapsedRealtime() - bitmapStart}ms"
                 )
 
-                // Give immediate visual feedback before PNG compression.
+                // Give immediate visual feedback before JPEG compression.
                 showFlash()
 
                 // The capture thread is now free to receive future frames.
-                // Only the save worker compresses and writes the PNG.
+                // Only the save worker compresses and writes the JPEG.
                 saveExecutor.execute {
                     val saveStart = SystemClock.elapsedRealtime()
 
@@ -454,7 +454,7 @@ class ScreenshotCaptureService : Service() {
             }
 
             if (!compressed) {
-                Log.e(TAG, "SAVE_FAILED: PNG compression returned false")
+                Log.e(TAG, "SAVE_FAILED: JPEG compression returned false")
                 return false
             }
 

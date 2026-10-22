@@ -598,8 +598,8 @@ class SidebarOverlayView(
             addStatusText(list)
         } else {
 
+            val selectedPackages = getSelectedPackages()
             launchableApps.forEach { app ->
-                val selectedPackages = getSelectedPackages()
 
                 addAppRow(
                     container = list,
